@@ -269,7 +269,7 @@ EXPLAIN SELECT user_id, status FROM `order` WHERE user_id = 10086 AND status = 1
 +----+-------------+-------+------------+------+-----------------+-----------------+---------+-------+------+----------+-------------+
 | id | select_type | table | partitions | type | possible_keys   | key             | key_len | ref   | rows | filtered | Extra       |
 +----+-------------+-------+------------+------+-----------------+-----------------+---------+-------+------+----------+-------------+
-|  1 | SIMPLE      | order | NULL       | ref  | idx_user_status | idx_user_status | 11      | const |  120 |    10.00 | Using index |
+|  1 | SIMPLE      | order | NULL       | ref  | idx_user_status | idx_user_status | 9       | const |  120 |  100.00 | Using index |
 +----+-------------+-------+------------+------+-----------------+-----------------+---------+-------+------+----------+-------------+
 -- 四个必看列：
 -- type=ref       走了非唯一索引的等值匹配（好）；ALL = 全表扫描（要警惕）

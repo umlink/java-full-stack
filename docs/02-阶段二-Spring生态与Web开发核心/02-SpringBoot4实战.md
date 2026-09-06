@@ -273,7 +273,7 @@ curl localhost:8080/actuator/metrics/http.server.requests
 | 方案 | 启动 | 代价 |
 |-|-|-|
 | 传统 JIT | 数秒 | — |
-| **Project Leyden AOT 缓存**（Java 25 GA） | 提速约 4 倍 | 构建期预生成代码缓存，无封闭世界假设 |
+| **Project Leyden AOT 缓存**（JDK 24 交付 / 25 可用） | 启动提速约 40%+（因应用而异） | 构建期预生成代码缓存，无封闭世界假设 |
 | GraalVM Native Image | 毫秒级、内存减半 | 构建慢；**封闭世界**：反射 / 动态代理需显式配置 |
 
 > **Leyden AOT 定位**：前瞻技术，了解即可；当前真正可落地的是 GraalVM Native Image，且只在 Serverless / 弹性伸缩敏感场景值得。

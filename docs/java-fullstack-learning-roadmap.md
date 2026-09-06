@@ -129,7 +129,7 @@ flowchart TD
 | 模块 | 关键内容 | 学习目标 |
 |------|----------|----------|
 | **Java 8 函数式与核心库** | Lambda 与函数式接口、Stream（惰性求值 / 短路操作）、Optional、java.time、方法引用 | 补齐函数式基础。你"了解 Java 基础语法"，函数式和 Stream 不能默认掌握，这是后续一切代码阅读的地基 |
-| **Java 17 / 21 / 25 语言特性** | 密封类（17）、record 与 record 模式（21）、switch 模式匹配（21）、虚拟线程（21）、作用域值 Scoped Values（25 转正）、结构化并发（25 预览，JEP 505）、紧凑 main 与模块导入声明（25）、Stable Values（25 预览） | 用现代 Java 写业务代码；理解演进方向（Valhalla 值类在 JDK 28 起预览，了解路线图即可） |
+| **Java 17 / 21 / 25 语言特性** | 密封类（17）、record（16）与 record 模式（21）、switch 模式匹配（21）、虚拟线程（21）、作用域值 Scoped Values（25 转正）、结构化并发（25 预览，JEP 505）、紧凑 main 与模块导入声明（25）、Stable Values（25 预览） | 用现代 Java 写业务代码；理解演进方向（Valhalla 值类在 JDK 28 起预览，了解路线图即可） |
 | **泛型、反射、注解、动态代理** | 类型擦除与通配符 PECS、反射 API 与性能代价、注解的 Retention 策略、JDK 动态代理 vs CGLIB | 这是 Spring / MyBatis 一切"魔法"的底层机制，必须吃透 |
 | **JVM 内存结构** | 堆 / 栈 / 方法区 / 元空间、运行时数据区划分、类加载机制与双亲委派、JIT 分层编译 | 能排查 OOM、分析内存泄漏、理解字节码层面发生了什么 |
 | **JMM（Java 内存模型）** | happens-before 规则、volatile 的可见性与禁用重排序、final 的安全发布语义、synchronized 锁升级（偏向锁已废弃 → 轻量级 → 重量级）、ThreadLocal 原理与内存泄漏 | 注意：JMM（并发语义规范）与 JVM 内存结构（运行时数据区）是两个概念，文档与面试中都不能混用 |
@@ -223,7 +223,7 @@ flowchart TB
 - **配置体系**：application.yml、多环境（profile）、`@ConfigurationProperties` 松散绑定与校验、外部化配置优先级
 - **内置容器**：Tomcat / Jetty / Undertow 切换、过滤器与拦截器的执行顺序
 - **监控**：Actuator 健康检查、指标暴露、自定义 Endpoint
-- **AOT 与原生镜像**：GraalVM Native Image、Project Leyden AOT 缓存（Java 25 GA 支持，启动提速约 4 倍）、什么场景值得上原生镜像
+- **AOT 与原生镜像**：GraalVM Native Image、Project Leyden AOT 缓存（Java 25 GA 支持，启动提速约 40%+、因应用而异）、什么场景值得上原生镜像
 - **日志体系**：SLF4J 门面 + Logback / Log4j2 实现、MDC 塞 TraceID 实现日志链路标记、日志规约（级别语义、敏感信息脱敏）
 
 #### 2.3 Web 层
@@ -633,6 +633,14 @@ flowchart LR
 - **压测**：JMeter / Gatling / k6、全链路压测（流量染色 + 影子表隔离）、单接口压测与场景压测的区别
 - **产出**：容量水位报告、扩容预案、降级预案
 
+#### 6.6 多租户设计（SaaS 数据隔离）
+
+- **三种模型**：共享表 + tenant_id（逻辑隔离）/ 独立 Schema（库级隔离）/ 独立库（最强隔离），成本随隔离度递增
+- **选型决策树**：租户数 / 数据量 / 合规约束 → 隔离方案（先共享表起步，别一上来每租户一库）
+- **租户上下文**：tenant_id 从认证身份透传（禁请求体），ThreadLocal 传递 + finally clear
+- **强制隔离**：TenantLine 拦截器自动拼 WHERE、唯一索引带租户、缓存 key 带租户
+- **坑**：连接数爆炸、索引带租户前缀、噪邻、双租户测试矩阵
+
 ### 能力自检
 
 - 设计一个 10w QPS 的秒杀系统，从 CDN 到数据库每一层怎么削峰？
@@ -707,9 +715,12 @@ flowchart LR
 
 #### 项目 2：电商订单系统（高并发方向，阶段 6 后启动）
 
-- **技术栈**：Spring Cloud Alibaba + ShardingSphere 分库分表 + Redis + RocketMQ + Elasticsearch + SkyWalking + K8s 部署
-- **核心功能**：商品搜索、购物车、下单、支付回调、库存扣减、订单状态机流转
-- **重点**：秒杀场景（缓存预热 + 令牌桶 + 异步下单 + 库存分段）、缓存一致性、消息削峰、全链路追踪、压测报告
+- **技术栈（三档递进）**：
+  - 核心链路（必做）：Spring Boot + MyBatis-Plus + Redis 预扣库存 + 订单状态机 + 限流降级 + k6 压测
+  - 扩展链路（选做）：RocketMQ 异步化 + 延时消息 + 分段库存
+  - 延后扩展（可选）：ShardingSphere 分库分表、SkyWalking 链路追踪、K8s 部署（学完阶段 5 回来做架构升级练习）
+- **核心功能**：下单、支付回调、库存扣减、订单状态机流转（ES 搜索、购物车标扩展/选做）
+- **重点**：秒杀场景（缓存预热 + 令牌桶 + 异步下单 + 库存分段）、缓存一致性、消息削峰、压测报告
 
 #### 项目 3：AI 应用平台（前沿方向，可选）
 
@@ -760,7 +771,7 @@ gantt
 ```
 
 > **说明**：
-> - 主线任务 a1 → a11 串行推进，约 285 天；中后台实战在数据层完成后即启动，与微服务、云原生阶段并行
+> - 主线任务 a1 → a9 → a11 串行推进，约 290 天；中后台实战（a10）在数据层完成后即启动，与微服务、云原生阶段并行
 > - 算法在 LeetCode 持续刷（每天 1–2 题），Java 后端面试的中等难度题为主
 > - 源码精读放在 Spring 学完之后，顺序建议：Spring IoC → MyBatis → Spring Boot 自动装配 → 线程池 / AQS（JDK）
 

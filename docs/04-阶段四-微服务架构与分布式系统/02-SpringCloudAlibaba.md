@@ -106,6 +106,7 @@ class OrderController {
 
     OrderController(RestClient.Builder builder) {
         // lb:// 前缀 = 走负载均衡器解析, "user-service" 被翻译成某个真实实例的 ip:port
+        // ⚠️ 注意: 这个 Builder 必须是 @LoadBalanced 修饰的 Bean 才能让 lb:// 生效, 否则只会当普通 URL 处理
         this.restClient = builder.baseUrl("lb://user-service").build();
     }
 
@@ -214,15 +215,21 @@ seata:
 ```
 
 ```sql
--- 每个参与 AT 事务的数据库都需要这张表: 一阶段执行 SQL 时同步写入前后镜像
+-- 每个参与 AT 事务的数据库都需要这张表: 一阶段执行 SQL 时同步写入前后镜像(官方结构)
 CREATE TABLE undo_log (
-    branch_id     BIGINT       NOT NULL,   -- 分支事务 ID
-    xid           VARCHAR(128) NOT NULL,   -- 全局事务 ID(由发起方生成, 跨服务透传)
-    rollback_info LONGBLOB     NOT NULL,   -- 前后镜像: 回滚时按它生成反向 SQL
-    log_status    INT          NOT NULL,   -- 0 正常 1 全局已完成
-    PRIMARY KEY (branch_id, xid)
+    id            BIGINT       NOT NULL AUTO_INCREMENT,   -- 自增主键
+    branch_id     BIGINT       NOT NULL,                  -- 分支事务 ID
+    xid           VARCHAR(100) NOT NULL,                  -- 全局事务 ID(由发起方生成, 跨服务透传)
+    context       VARCHAR(128) NOT NULL,                  -- 回滚上下文(如序列化器)
+    rollback_info LONGBLOB     NOT NULL,                  -- 前后镜像: 回滚时按它生成反向 SQL
+    log_status    INT          NOT NULL,                  -- 0 正常 1 全局已完成
+    log_created   DATETIME(6),                            -- 创建时间
+    log_modified  DATETIME(6),                            -- 修改时间
+    PRIMARY KEY (id),
+    UNIQUE KEY ux_undo_log (xid, branch_id)               -- 唯一键: 一事务分支一条
 );
 ```
+> **注意**：`undo_log` 表结构以 Seata 官方为准（`id` 自增主键 + `UNIQUE(xid, branch_id)`，并含 `context`/`log_created`/`log_modified` 列）；别凭记忆建表。
 
 ```java
 @Service

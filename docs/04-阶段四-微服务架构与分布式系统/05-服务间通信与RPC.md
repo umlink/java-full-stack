@@ -141,7 +141,7 @@ spring:
 
 ```proto
 // gRPC: IDL 先行(契约即 .proto), 代码生成强类型客户端 —— 与 tRPC 契约思想同宗(阶段七回收)
-syntax "proto3";
+syntax = "proto3";   // 注意: syntax 后面要有等号, 这是 .proto 的固定写法
 service Inventory {
   rpc Deduct(DeductReq) returns (DeductRes);            // 一元调用
   rpc Watch(WatchReq) returns (stream StockEvent);       // 服务端流: 库存变更推送

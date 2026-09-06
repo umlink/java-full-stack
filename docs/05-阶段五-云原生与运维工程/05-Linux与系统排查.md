@@ -82,7 +82,7 @@ pidstat -p <pid> 1      # 单进程 CPU/IO 明细
 # 网络：连接状态是第一现场
 ss -s                   # 汇总: TCP 连接数分布, TIME-WAIT/CLOSE-WAIT 计数
 ss -tanp | grep order   # 某服务的连接清单(含进程)
-ss -k <五元组>          # 单连接的拥塞窗口/RTT —— 慢链路排查
+ss -tinp <五元组>      # 单连接的拥塞窗口/RTT —— 慢链路排查(-i 内部信息, -n 数字, -p 进程)
 lsof -p <pid> | wc -l   # 文件描述符占用(连接耗尽先看这个)
 tcpdump -i any host 10.0.0.5 and port 3306 -w db.pcap   # 抓包终审(阶段一第10讲伏笔): 拿 pcap 进 Wireshark
 

@@ -157,7 +157,7 @@ MySQL → ES 同步方案对比:
   三者共性: 消费端要幂等(同文档重复写覆盖无害, 天然幂等) + 失败进重试/DLQ + 定期对账补偿
 ```
 
-- **深分页问题**：`from + size` 要取回「前 from+size 条」再丢弃——第 1000 页意味着每个分片都要交 10020 条候选。ES 默认 `index.max_result_window=10000` 直接封死。
+- **深分页问题**：`from + size` 要取回「前 from+size 条」再丢弃——第 1000 页（size=10，from=9990）意味着每个分片都要取满 `from+size = 10000` 条候选；且 ES 默认 `index.max_result_window=10000` 直接把 `from+size>10000` 的请求封死。
 - 解法：`search_after`（游标式，上一页最后一条的排序值作起点，翻页恒定成本）；全量导出用 PIT + search_after（scroll 已不推荐）：
 
 ```json

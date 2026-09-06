@@ -242,7 +242,7 @@ public class NettyEchoServer {
                       .addLast(new ChannelInboundHandlerAdapter() {
                           @Override
                           public void channelRead(ChannelHandlerContext ctx, Object msg) {
-                              ctx.writeAndReturn(msg);   // echo: 写回会沿出站方向过 Encoder
+                              ctx.writeAndFlush(msg);   // echo: 写回并立即发送, 会沿出站方向过 Encoder
                           }
                       });
                  }

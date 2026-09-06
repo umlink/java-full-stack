@@ -36,11 +36,15 @@ public class HelloService {
     public String hello() { return "你好，Spring"; }
 }
 
-// ② 一个控制器：标注 @RestController，对外暴露接口；@Autowired 让容器把 HelloService 递进来
+// ② 一个控制器：标注 @RestController，对外暴露接口；构造器注入让容器把 HelloService 递进来
 @RestController
 public class HelloController {
-    @Autowired
-    private HelloService helloService;          // 容器自动注入，不需要 new
+    private final HelloService helloService;    // final: 构造后不可变, 这是推荐写法
+
+    // 构造器注入(单构造器可省 @Autowired): 依赖一目了然、可 final、单测好写
+    public HelloController(HelloService helloService) {
+        this.helloService = helloService;       // 容器自动把 HelloService 塞进构造器
+    }
 
     @GetMapping("/hello")
     public String hello() {
@@ -52,9 +56,9 @@ public class HelloController {
 > 代码备注（逐行解释）：
 > - `@Service` 告诉容器「这个类要交给容器管理、可以被别人注入」。
 > - `@RestController` 告诉 Spring「这个类处理 HTTP 请求，返回值自动转成 JSON」。
-> - `@Autowired` 是「请容器把符合条件的 Bean 递给我」——你声明需求，容器负责找出来塞进来。
+> - **构造器注入**（推荐）：`public HelloController(HelloService helloService)`——容器自动把匹配的 Bean 塞进构造器；字段可 `final`、依赖一目了然。
 > - `@GetMapping("/hello")` 表示「浏览器访问 `/hello` 这个地址，就执行下面的方法」。
-> - 你从没写过一个 `new HelloService()`，但它却能正常执行——这就是 IoC：对象由容器创建装配。
+> - 你从没写过一个 `new HelloService()`，但它却能正常执行——这就是 IoC：对象由容器创建装配。注解版 `@Autowired` 用在字段上是反模式（正文展开），本示例用更规范的构造器注入。
 
 ### 关键注解 / 类说明
 

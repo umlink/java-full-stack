@@ -47,7 +47,7 @@ jobs:
 > - `on: [push]`：触发条件——每次 push 都自动跑这条流水线。
 > - `actions/checkout`：拉取代码到运行环境。
 > - `actions/setup-java`：装 JDK，指定版本 `java-version: '25'`。
-> - `mvn test jacoco:report jacoco:check`：**跑单测 + 覆盖率门禁**——覆盖率不够会让构建失败（这就是门禁，测试不过不许合并）。
+> - `mvn test jacoco:report jacoco:check`：**跑单测 + 覆盖率门禁**——覆盖率不够会让构建失败（这就是门禁，测试不过不许合并）。注意 `jacoco:check` 要真正拦截，前提是在 pom 里配了 `<rules>` 阈值（阶段二第 5 讲），否则只是出报告不拦截。
 > - `docker build`：构建镜像，用来后续部署。
 > - 这就是 CI 的最小形态：**提交 → 自动测试 → 构建产物**，让「每次改动都有验证」成为习惯。
 
@@ -96,7 +96,8 @@ stages: [check, test, build, deploy]
 lint:
   stage: check
   script: [mvn -q compile, "mvn pmd:check"]          # 编译级静态检查 + 规约
-  rules: { if: '$CI_PIPELINE_SOURCE == "merge_request_event"' }
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 
 unit-test:
   stage: test

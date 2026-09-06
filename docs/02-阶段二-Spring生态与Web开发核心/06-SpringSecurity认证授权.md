@@ -36,9 +36,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         String header = req.getHeader("Authorization");
         if (header != null && header.startsWith("Bearer ")) {
-            var claims = jwtService.parse(header.substring(7));   // 验签 + 解析
+            var claims = jwtService.parse(header.substring(7));   // 验签 + 解析(返回自定义 record Claims)
             var auth = new UsernamePasswordAuthenticationToken(   // 构造认证对象
-                claims.getSubject(), null, claims.getAuthorities());
+                claims.subject(), null, claims.authorities());    // record 访问器风格
             SecurityContextHolder.getContext().setAuthentication(auth);  // 放进上下文, 下游授权层读它
         }
         chain.doFilter(req, res);
@@ -172,9 +172,10 @@ sequenceDiagram
 public void refund(Long orderId) { ... }
 
 // ABAC 思路: 数据归属自己判 —— Spring EL 里直接读方法参数 + SecurityContext
-@PreAuthorize("#orderId.ownerId == authentication.principal.userId " +   // 「只能改自己的单」
+// 注意: 参数必须是含 ownerId 的领域对象(如 Order order), 才能用 #order.ownerId; 传 Long 是取不到属性的
+@PreAuthorize("#order.ownerId == authentication.principal.userId " +   // 「只能改自己的单」
               "or hasRole('ORDER_ADMIN')")                               // 管理员例外
-public void cancel(Long orderId) { ... }
+public void cancel(Order order) { ... }   // 参数是 Order, 才有 .ownerId; principal 为自定义 UserDetails(含 userId)
 ```
 
 - RBAC（角色）管功能入口，ABAC（属性：部门 / 数据范围 / 时间）管数据边界——企业后台通常 RBAC 为骨、数据权限（部门树 / 本人）为肉（项目一 RBAC 会完整落地）。

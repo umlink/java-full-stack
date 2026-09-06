@@ -263,7 +263,8 @@ public class OrderController {
 <dependency>
     <groupId>org.springdoc</groupId>
     <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-    <version>2.8.0</version>
+    <!-- 版本红色: springdoc 2.x 仅兼容 Boot 3; Boot 4 需用 springdoc 3.x —— 具体版本以官方文档为准 -->
+    <version>3.0.0</version>
 </dependency>
 ```
 
