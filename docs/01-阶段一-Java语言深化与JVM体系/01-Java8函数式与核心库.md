@@ -18,6 +18,8 @@
 | java.time | Java 新的时间 API（不可变、线程安全） | `LocalDate.now()`、`Instant.now()` |
 | 方法引用 | Lambda 的简写：把「已有方法」直接当函数用 | `User::getName` 等价于 `u -> u.getName()` |
 
+> 🧩 **前置 30 秒：泛型 `List<String>` 怎么读**——尖括号里的 `String` 是「类型参数」，`List<String>` 读作「装 String 的 List」，`Function<T,R>` 读作「吃 T 吐 R 的函数」。和 TS 泛型是**同一套心智**（TS 泛型本来就是从 Java/C# 这套学的），唯一差异：Java 泛型在运行时会被「擦除」（第 3 讲展开），TS 是编译后消失。本讲你只需会读会写。
+
 ### 本讲在解决什么问题
 
 - **问题**：以前用 `for` 循环 + `if` 一层层处理集合，代码又长又易错。Java 8 引入函数式 + Stream，让你能用「声明式」写法处理数据：**「要什么」而不是「怎么遍历」**。
@@ -78,7 +80,11 @@ public class StreamDemo {
 
 ### 1. Lambda 与函数式接口
 
-**函数式接口（Functional Interface）**：只有一个抽象方法的接口——Lambda 就是它的实例化语法。Java 不像 JS 有「一等公民函数」，函数必须挂在一个接口类型上才能传递（这是与 JS 箭头函数最核心的差异）。**为什么必须「只有一个」抽象方法**：Lambda 没有方法名和签名，编译器只能靠「目标类型」推断它实现的是哪个方法——抽象方法唯一，推断才不会产生歧义；`default` / `static` 方法自带实现体，不影响推断。
+**函数式接口（Functional Interface）**：只有一个抽象方法的接口——Lambda 就是它的实例化语法。Java 不像 JS 有「一等公民函数」，函数必须挂在一个接口类型上才能传递（这是与 JS 箭头函数最核心的差异）。
+
+> 🧩 **前置 30 秒：Java 的 interface 不是 TS 的 interface**——TS 的 interface 是纯类型声明（编译后消失）；Java 的 interface 是一个**能当变量类型用的真类型**（可以声明变量、做方法参数、被类实现），还允许带 `default` 方法（自带实现体的方法）。所以「函数式接口类型的变量」在 Java 里完全合法——Lambda 赋值给它，就像把一段逻辑装进一个有名字的容器。
+
+**一个类比记住它**：函数式接口像一张**只有一个岗位的招聘启事**（只招「算折扣」这一个岗位），Lambda 就是**拿着简历直接上岗的临时工**（不办入职手续、不建档案，干完就走）。**为什么只能有一个抽象方法**：Lambda 没有方法名和签名，编译器只能靠「目标类型」推断它实现的是哪个方法——招聘启事上岗位不唯一，HR（编译器）就不知道你这简历投的是哪个岗，推断产生歧义直接编译报错；`default` / `static` 方法自带实现体（相当于 JD 里写死的固定条款），不影响推断。
 
 ```java
 // @FunctionalInterface 只是编译期检查注解：确保接口只有一个抽象方法
@@ -102,7 +108,9 @@ System.out.println(lambda.apply(100.0));   // 输出: 90.0
 
 #### 1.1 JDK 内置函数式接口家族（必背五个签名）
 
-不用每个场合都自定义接口——JDK 已经把「一进一出」的组合空间标准化了：
+不用每个场合都自定义接口——JDK 已经把「一进一出」的组合空间标准化了。
+
+> 🧩 **前置 30 秒：int vs Integer（自动装箱）**——下面会出现 `Predicate<Integer>` 而不是 `Predicate<int>`，为什么？Java 的 `int` 是裸的原始值（就是 32 位数字本身），**集合与泛型只能装「对象」不能装裸值**，所以要包一层用 `Integer`（int 的「盒子装版」）。int ↔ Integer 的自动互转叫**自动装箱/拆箱**（有微小开销，海量循环里要留意；底层细节第 8 讲集合框架会再遇到）。TS 没有这套区分——记住「集合里装的永远是盒子」即可。
 
 | 接口 | 签名 | 一句话 | JS 对应物 |
 |-|-|-|-|
@@ -125,7 +133,11 @@ System.out.println(isEven.test(4));            // 输出: true
 printer.accept("只消费，不返回");                // 输出: 只消费，不返回
 ```
 
+> **餐厅记忆法**：把五个接口想成餐厅的五个岗位——`Supplier` 采购员（不接单只出货：`() -> T`）、`Consumer` 服务员（只上菜不回收：`T -> void`）、`Function` 厨师（食材进、菜品出：`T -> R`）、`Predicate` 质检员（合格放行 / 不合格退回：`T -> boolean`）、`BiFunction` 双手师傅（两口锅同时颠：`(T,U) -> R`）。之后读 Stream 代码按岗位代入：`map(Function)` 是「过一遍厨师」，`filter(Predicate)` 是「过一遍质检」。
+
 > **为什么必须背签名**：后面 Stream 的 `map(Function)` / `filter(Predicate)` / `forEach(Consumer)`、Optional 的 `orElseGet(Supplier)` 全用这套词汇表。不背它，读 Stream 代码就是看天书。
+
+> 🧩 **顺带必须会：effectively final（面试 Q3 会考）**——Lambda 只能捕获「不再被重新赋值的局部变量」（没声明 `final` 但事实上没改过，就叫 effectively final）。原因：Java 的捕获是**按值捕获**（把变量值复制一份带进 Lambda），如果外部还在改这个变量，副本和本体就「对不上账」，所以编译器直接禁止。捕获 `List` 这类可变对象没问题——被复制的只是「引用」，往里 `add` 改的是对象内容，不是变量本身。
 
 ### 2. Stream：惰性求值（Lazy Evaluation）与短路操作（Short-circuiting）
 
@@ -166,6 +178,22 @@ System.out.println(result);
 
 > **与 JS 的关键差异**：`Array.prototype.filter/map` 是**立即执行**的（每个方法遍历一遍数组）；Java Stream 是**先声明后触发**，且元素是「逐个流过全流水线」的（垂直执行），不是每个操作各扫一遍——JDK 实现通常把整条流水线优化为尽量少的遍历（多数场景确实一次），但这不是规范保证，经过 `flatMap` 等复杂操作时可能引入额外处理。
 
+一张图看清「水平执行 vs 垂直执行」（JS 是先把整个数组过完 filter、再整体过 map；Java 是每个元素接力走完全链，才轮到下一个元素）：
+
+```mermaid
+flowchart TD
+    subgraph JSX["JS 链式调用：水平执行（每个方法把数组完整扫一遍）"]
+        A["[1,2,3,4]"] -->|"filter：扫全部 4 个，产出中间数组"| B["[2,4]"]
+        B -->|"map：再扫全部 2 个，又产出中间数组"| C["[4,8]"]
+    end
+    subgraph JV["Java Stream：垂直执行（每个元素依次流过整条链）"]
+        D["元素 2"] -->|"filter 放行"| E["map ×2"] -->|"collect 收下"| F["结果 4"]
+        G["元素 3"] -.->|"filter 拦下，止步"| H["不再经过 map/collect"]
+    end
+```
+
+> 记忆版：JS 是「分批过三道工序的传送带」，Java Stream 是「单件流水的组装线」——这就是为什么 Java 的短路操作（`limit` / `findFirst`）能「拉够就停」：第 5 个元素收进 collect 后，第 6 个元素根本没上过线。
+
 #### 2.2 短路操作
 
 `limit` / `takeWhile` / `findFirst` / `anyMatch` 可以提前终止流水线，不遍历全量元素——处理无限流或大集合时的性能武器。**为什么能提前终止**：拉取式流水线里，终端操作是「按需索取」——`limit(5)` 索要到第 5 个就收手，上游不必被迫生成第 6 个元素；这正是无限流（`Stream.iterate`）能配合 `limit` 安全运行的原因。
@@ -189,7 +217,7 @@ System.out.println(hasLongName);    // 输出: true（只检查到 Charlie 就�
 
 > 业务场景一句话：当日 10 万条风控日志按时间序流式处理，`riskLogs.stream().filter(Log::isAlert).limit(5)` 取最早 5 条告警——短路让后面的元素根本不扫，这是 `limit` 在企业代码里的主战场。
 
-> ⏸️ **短期可以不学**：并行流（`parallelStream`）的线程安全陷阱先留给第 7 讲并发编程——绝大多数业务代码用默认串行流就够了，「方便」不等于「适合」，它会把公共 ForkJoinPool、共享变量竞态、结果顺序不确定性一起带进来。**何时回来学**：需要压榨多核吞吐、或面试被问「并行流什么时候该用」时。**面试最低要求**：能说清「并行流默认用公共 ForkJoinPool、共享变量有竞态、结果顺序不保证」即可。
+> ⏸️ **短期可以不学**：并行流（`parallelStream`）的线程安全陷阱先留给第 7 讲并发编程——绝大多数业务代码用默认串行流就够了，「方便」不等于「适合」，它会把公共 ForkJoinPool（全 JVM 共享的默认线程池，第 7 讲展开）、共享变量竞态、结果顺序不确定性一起带进来。**何时回来学**：需要压榨多核吞吐、或面试被问「并行流什么时候该用」时。**面试最低要求**：能说清「并行流默认用公共 ForkJoinPool、共享变量有竞态、结果顺序不保证」即可。
 
 ### 3. Optional：用类型系统表达「可能没有值」
 
@@ -232,7 +260,7 @@ String must = findUser(2L).orElseThrow(() -> new IllegalStateException("用户�
 
 ### 4. java.time：不可变时间 API
 
-旧 `Date` / `Calendar` 是可变对象（set 来 set 去）且非线程安全——`SimpleDateFormat` 并发解析直接炸。JS 里你可能被 `Date` 的月份从 0 开始坑过，Java 新 API 全面向 ISO 8601 看齐。
+旧 `Date` / `Calendar` 是可变对象（set 来 set 去）且非线程安全——`SimpleDateFormat` 并发解析直接炸。JS 里你可能被 `Date` 的月份从 0 开始坑过，Java 新 API 全面向 ISO 8601（日期时间的国际标准写法，如 `2026-09-06`）看齐。
 
 ```java
 import java.time.*;
@@ -290,7 +318,7 @@ System.out.println(lengths1);                    // 输出: [5, 3, 7]
 ### 坑点提醒
 
 - **Stream 只能消费一次**：`stream.collect(...)` 之后再对同一个 stream 调用任何操作抛 `IllegalStateException`——要再次处理请从集合重新 `stream()`。
-- **`orElse` vs `orElseGet`**：`orElse(expensive())` 里 expensive **永远执行**（先求值再传入）；`orElseGet(() -> expensive())` 只在空时执行。兜底逻辑有成本时必须用后者。
+- **`orElse` vs `orElseGet`**：`orElse(expensive())` 里 expensive **永远执行**（先求值再传入）；`orElseGet(() -> expensive())` 只在空时执行。生活版：兜底动作是「给客户打一通电话」——`orElse` 是不管客户在不在家都先拨一遍，`orElseGet` 是确认没人应答了才拨。兜底逻辑有成本时必须用后者。
 - **别在 Stream 里写副作用**：`forEach` 里改外部集合是并发隐患（尤其 parallelStream）；要聚合就正经用 `collect`。
 - **`Optional.get()` 尽量不用**：空时抛 NoSuchElementException 且不带上下文——用 `orElseThrow` 抛带业务语义的异常。
 - **旧 `Date` 只在对接老接口时出现**：新代码一律 `java.time`；`Date` ↔ `Instant` 用 `toInstant()` 桥接。
@@ -317,7 +345,7 @@ System.out.println(lengths1);                    // 输出: [5, 3, 7]
 **答**：区别在求值时机。`orElse(value)` 的参数是**先求值**再传入——即使 Optional 有值，`expensive()` 也一定会执行；`orElseGet(supplier)` 是惰性的，只有 Optional 为空时才会调用 Supplier。选型原则：兜底逻辑有成本（查库、构造大对象、打日志）就必须用 `orElseGet`，否则每次调用都在白白浪费；兜底是常量、字面量时两者等价，用 `orElse` 读起来更直观。延伸考点：Optional 的使用边界——只适合做方法返回值（签名即文档），不适合做字段和参数（增加序列化与内存成本、把防御责任推给调用方）；`Optional.get()` 空时抛 `NoSuchElementException` 且无上下文，应改用 `orElseThrow` 抛带业务语义的异常。
 
 ### Q3：Lambda 表达式和匿名内部类有什么区别？为什么 Lambda 捕获的外部变量必须是 effectively final？
-**答**：语法上 Lambda 更简洁，但本质差异有三：① Lambda 是「函数式接口的实例化」，编译期走 `invokedynamic`，不强制生成单独的 .class 文件；匿名内部类会生成类文件、引入额外类型。② Lambda 里 `this` 指向**外层类**，匿名内部类的 `this` 指向内部类自身。③ 捕获语义：Lambda 要求捕获的局部变量是 effectively final——因为 Java 的捕获是**按值捕获**（变量被复制进 Lambda 的上下文），若变量还能被重新赋值，捕获的副本与外部变量就会不一致；设计上禁止重新赋值，语义才清晰。工程注意：捕获可变对象（如 List）只是引用不可变，对象内容仍可改，这不算 effectively final 的豁免。
+**答**：语法上 Lambda 更简洁，但本质差异有三：① Lambda 是「函数式接口的实例化」，编译期走 `invokedynamic`（JVM 的动态调用指令，运行时才把 Lambda 绑定到目标方法），不强制生成单独的 .class 文件；匿名内部类会生成类文件、引入额外类型。② Lambda 里 `this` 指向**外层类**，匿名内部类的 `this` 指向内部类自身。③ 捕获语义：Lambda 要求捕获的局部变量是 effectively final——因为 Java 的捕获是**按值捕获**（变量被复制进 Lambda 的上下文），若变量还能被重新赋值，捕获的副本与外部变量就会不一致；设计上禁止重新赋值，语义才清晰。工程注意：捕获可变对象（如 List）只是引用不可变，对象内容仍可改，这不算 effectively final 的豁免。
 
 ### Q4：parallelStream 有什么坑？什么时候该用并行流？
 **答**：并行流默认使用**公共的 ForkJoinPool**（线程数 = CPU 核数 - 1），主要有四个坑：① 共享变量竞态——流里的操作若写外部可变状态（如 `forEach` 里往集合 add），结果不确定；② 公共池被阻塞任务占满，会拖垮全应用的并行任务；③ 结果顺序不保证——并行收集不做顺序控制时，`collect(toList())` 的元素顺序可能不符合预期；④ 数据量小时并行反而更慢（任务切分、线程切换的开销超过收益）。正确用法：**数据量大 + 无共享可变状态 + CPU 密集（或每个元素处理耗时长）**。业务开发的经验是默认串行，性能压测证明并行收益后再换；自定义线程池与公共池混用要谨慎，避免互相阻塞。

@@ -18,7 +18,7 @@
 | 注解 | 写在类/方法上的「标签」，告诉容器做什么 | `@Service`、`@Transactional` |
 | AOP（Aspect-Oriented Programming，面向切面编程） | 把「每个方法都要但又不想每个都写」的逻辑抽出来统一做 | 日志、事务、权限校验 |
 | @Transactional | 声明「这个方法要么全成功、要么全回滚」的事务切面 | 下单 + 扣库存必须一起成功 |
-| 事件（Event） | 某件事发生后，广播给感兴趣的监听器去处理（解耦） | 下单成功 → 发短信 / 同步 ES |
+| 事件（Event） | 某件事发生后，广播给感兴趣的监听器去处理（解耦） | 下单成功 → 发短信 / 同步 ES（Elasticsearch，分布式搜索引擎，阶段三展开） |
 | 代理对象 | 容器给你的其实是「替身」，替身在你调用前后插入额外逻辑 | 你注入的是代理，不是原始类 |
 
 ### 本讲在解决什么问题
@@ -68,7 +68,7 @@ public class HelloController {
 | `@Autowired` | 从容器拿一个 Bean 注入 | 可省略（单构造器），但字段注入是反模式 |
 | `@Configuration` + `@Bean` | 第三方库对象、需要定制逻辑的对象，用这种方式手动声明进容器 | 方法名即 Bean 名；返回值类型决定匹配 |
 | `@Aspect` | 声明切面类（配合 `@Component`） | 忘了 `@Component` 切面不生效 |
-| `@Transactional` | 方法级事务（成功提交/异常回滚） | `this` 自调用、非 public、受检异常默认不回滚——五大失效场景 |
+| `@Transactional` | 方法级事务（成功提交/异常回滚） | `this` 自调用、非 public、受检异常（Java 强制要求 try-catch 或 throws 声明才能编译的异常，如 `IOException`；`RuntimeException` 及其子类不强制、叫非受检——前端没这概念，阶段一也没专讲，先记住这个区别）默认不回滚——五大失效场景 |
 | `ApplicationEventPublisher` | 发布事件 | 监听器默认同步且在事务内，副作用逻辑要用 `@TransactionalEventListener` |
 
 ### 常用约定 / 命名提示
@@ -108,6 +108,8 @@ flowchart TB
 > **基线提示**：Boot 4 / Framework 7 基于 Jakarta EE 11，所有 `javax.*` 早已迁移为 `jakarta.*`（`jakarta.servlet`、`jakarta.persistence`……）——看到老博客里的 `javax.*` 要自觉换算。
 
 ### 1. IoC 容器
+
+> 🧩 **前置 30 秒：回收阶段一资产**——本讲到处在用阶段一学过的东西：**第 3 讲**的「反射读注解」（Bean 怎么被扫出来、注解怎么生效）和「JDK 动态代理 vs CGLIB」（AOP 代理怎么生成）、**第 7 讲**的「ThreadLocal」（事务上下文就绑在它身上）。前端对照：这些是 JS 运行时不会让你碰的「底层按钮」，Java 这边全看得见。没学过的先回去补这三个小节，细节在本讲 1.4 / 2.1 / 2.3 节展开。
 
 #### 1.1 Bean 的声明与注入
 
@@ -160,20 +162,34 @@ public class CacheWarmer {
         // ① 实例化：容器调构造器（此时字段还没注入，别在这里用依赖！）
     }
 
-    @PostConstruct            // ③ 初始化回调：依赖注入完成之后、对外服务之前
+    @PostConstruct            // ⑤ 初始化回调：依赖注入完成之后、对外服务之前
     public void warmUp() {
         // 适合做：预热缓存、校验配置、注册 shutdown 钩子之外的一次性准备
         log.info("缓存预热完成");
     }
 
-    @PreDestroy               // ④ 销毁回调：容器关闭时（K8s 滚动更新杀 Pod 前会走到）
+    @PreDestroy               // ⑧ 销毁回调：容器关闭时（K8s 滚动更新杀 Pod 前会走到）
     public void cleanup() {
         // 适合做：刷新缓冲、释放连接
     }
 }
 ```
 
-完整顺序（面试口径）：**实例化 → 属性填充 → Aware 回调 → BeanPostProcessor 的 `postProcessBeforeInitialization` → `@PostConstruct` / `afterPropertiesSet` / `init-method` → BeanPostProcessor 的 `postProcessAfterInitialization` → 就绪使用 → `@PreDestroy` → 销毁**。
+完整顺序（面试口径）：`① 实例化 → ② 属性填充 → ③ Aware 回调（容器「感知」钩子——让 Bean 拿到容器给的名片：我叫什么、我属于谁）→ ④ BeanPostProcessor 前置 → ⑤ 初始化回调 → ⑥ BeanPostProcessor 后置 → ⑦ 就绪使用 → ⑧ @PreDestroy → ⑨ 销毁`，全程像水流过九段管道、每一段都是可插拔的扩展点：
+
+```mermaid
+flowchart TD
+    A["① 实例化<br/>开辟内存、造出空对象<br/>❌ 此刻依赖还没注入，别在构造器里用！"] --> B["② 属性填充<br/>@Autowired 的依赖这时才递进来<br/>✅ 从这里起才能用注入的依赖"]
+    B --> C["③ Aware 回调<br/>容器递名片：我叫什么、我属于谁"]
+    C --> D["④ BeanPostProcessor 前置<br/>postProcessBeforeInitialization"]
+    D --> E["⑤ 初始化回调<br/>@PostConstruct / afterPropertiesSet / init-method"]
+    E --> F["⑥ BeanPostProcessor 后置<br/>postProcessAfterInitialization<br/>AOP 代理就是在这里换进容器的"]
+    F --> G["⑦ 就绪使用<br/>对外提供服务"]
+    G --> H["⑧ @PreDestroy<br/>容器关闭前收到通知"]
+    H --> I["⑨ 销毁<br/>释放资源"]
+```
+
+> ⑤ 初始化回调有**三种写法、是同一时机**：`@PostConstruct`（注解，最常用）、`InitializingBean.afterPropertiesSet`（实现接口）、`init-method`（配置里指定方法名）——三者按「注解 → 接口 → 配置」顺序依次执行，面试 Q1 有完整版。
 
 > **BeanPostProcessor**：容器级的「加工流水线」钩子，对**所有 Bean** 的初始化前后各插一手。它不是给你业务用的——Spring 自己靠它实现大量魔法（如 `@Configuration` 的增强、AOP 代理的生成）。你知道「代理对象是在 `postProcessAfterInitialization` 这一步替换进容器的」即可解释很多现象。
 
@@ -195,10 +211,29 @@ public class CacheWarmer {
 
 ```mermaid
 flowchart LR
-    A[A 实例化] -->|提前暴露早期引用到三级缓存| B[B 实例化]
-    B -->|从缓存拿到 A 的早期引用, 完成注入| C[B 就绪]
-    C -->|A 拿到成品 B, 完成注入| D[A 就绪]
+    subgraph A 的创建流程
+        A1["A 实例化<br/>造出空对象"] --> A2["A 半成品：往③级缓存挂一个工厂"]
+        A2 --> A3["A 属性填充：发现需要 B"]
+        A3 --> A6["A 拿到成品 B<br/>A 就绪，进①级"]
+    end
+    subgraph 三个缓存容器
+        C3["③级 singletonFactories<br/>半成品工厂<br/>延迟决定：给原始对象还是代理"]
+        C2["②级 earlySingletonObjects<br/>提前曝光的半成品对象"]
+        C1["①级 singletonObjects<br/>成品 Bean"]
+    end
+    subgraph B 的创建流程
+        B1["B 实例化"] --> B2["B 属性填充：发现需要 A"]
+        B2 --> B3["B 到③级取 A 的工厂<br/>（循环依赖发生！）"]
+        B3 --> B4["B 拿到 A 早期引用<br/>完成创建，B 进①级"]
+    end
+    A2 -- "半成品先挂③级（只挂工厂，不提前装修）" --> C3
+    B3 -- "循环依赖发生时才取" --> C3
+    C3 -- "此刻才升级为代理或原始对象" --> C2
+    C2 -- "B 拿走 A 的早期引用" --> B4
+    B4 -- "B 就绪后，A 拿到成品 B" --> A6
 ```
+
+> **生活类比：半成品房先挂中介牌**——A 一开工就把自己登记成「半成品房」，在中介（③级缓存）挂个牌子，但**先不装修**（不生成代理）。真有人来买房（循环依赖发生）时，才决定这套房交付成**精装房**（代理对象）还是**毛坯**（原始对象）；没人问就一直挂着，省下装修费。换成 Spring：③级缓存里存的是「工厂」而不是对象本身——工厂的职责就是「到需要的那一刻才决定给你原始对象还是代理」，于是绝大多数不参与循环依赖的 Bean 根本不用提前生成代理。
 
 - 一级缓存 `singletonObjects`：成品 Bean；二级 `earlySingletonObjects`：提前曝光的半成品；三级 `singletonFactories`：**ObjectFactory**——关键在工厂可以延迟决定「返回原始对象还是 AOP 代理」，避免不必要的提前代理。
 - **为什么必须是三级而不是两级**：AOP 代理是 Bean 初始化完成后由 BeanPostProcessor 才生成的，若只有「原始对象缓存」，就无法把代理暴露给循环引用方。若退而求其次用两级并提前生成代理，则每个 Bean 都得在实例化时就把代理造好——绝大多数 Bean 根本不参与循环依赖，白白多一层代理开销。三级缓存让「要不要代理」推迟到真正发生循环依赖的那一刻才做决定。
@@ -233,6 +268,10 @@ public class AuditLogAspect {
 }
 ```
 
+> **生活类比：酒店安检闸机**——切面（Aspect）就是整套**安检系统**：**切点（Pointcut）**决定「哪些门要装闸机」（对哪些方法生效）、**通知（Advice）**决定「闸机执行什么检查」（开包 / 扫描 / 测体温）、**织入（Weaving）**是把闸机装进门框里——装的是门，**而不是改造每一位客人本身**。换成 Spring：你的业务类代码一行没改，容器只是悄悄把 `OrderService` 换成了「装了闸机的代理对象」，方法调用先过闸机再进业务。
+>
+> 通知（Advice）共 5 类，本文示例用的是威力最大的 `@Around`：`@Before`（进门前查）、`@After`（无论成败出门都查）、`@AfterReturning`（正常返回后查）、`@AfterThrowing`（抛异常后查）、`@Around`（完全接管：查 → 放行 → 返回后再查，最强也最危险）。
+
 > 底层就是阶段一第 3 讲的动态代理：容器注入给你的 `OrderService` 实际是**代理对象**——纯 Spring 5 默认「有接口走 JDK 代理、无接口走 CGLIB」；Spring Boot 2+ 默认 `spring.aop.proxy-target-class=true`，**一律用 CGLIB 生成子类**（不需要接口、能代理无接口类），方法调用先进切面链，再透传给真实对象。
 > 对照 NestJS：能力上 ≈ Interceptor，但 Spring AOP 在**字节码代理层**工作——任何 Bean 方法都能切（包括 Service 内部方法间调用之外的入口），NestJS Interceptor 只包 Controller 路由。
 
@@ -247,7 +286,7 @@ public class OrderService {
     @Transactional                 // 默认对 RuntimeException 和 Error 回滚
     public void placeOrder(OrderCmd cmd) {
         orderRepo.save(cmd.toOrder());
-        outboxRepo.save(new OutboxEvent("OrderPlaced", cmd.id()));  // 同一事务：要么都成功要么都回滚
+        outboxRepo.save(new OutboxEvent("OrderPlaced", cmd.id()));  // Outbox（本地消息表模式，阶段四第 3 讲展开）：同一事务写业务 + 待发消息，要么都成功要么都回滚
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -259,7 +298,31 @@ public class OrderService {
 }
 ```
 
-常用传播行为：`REQUIRED`（默认，有就加入没有就新建）/ `REQUIRES_NEW`（独立新事务——挂起外层并另占一条数据库连接，代价最贵）/ `NESTED`（保存点，可部分回滚，不换连接）/ `SUPPORTS`（有就有没有就没有）。
+常用传播行为：`REQUIRED`（默认，有就加入没有就新建）/ `REQUIRES_NEW`（独立新事务——挂起外层并另占一条数据库连接，代价最贵）/ `NESTED`（打**存档点（savepoint，保存点）**——在事务里留一个可回退的标记，回滚只回到标记处、不换连接）/ `SUPPORTS`（有就有没有就没有）。「事务套事务」的三种典型形态，各占几条连接、回滚波及谁，一图看清：
+
+```mermaid
+flowchart LR
+    subgraph REQUIRED["① REQUIRED 有就加入"]
+        direction TB
+        R1["外层事务 T1<br/>1 条连接"] --> R2["内层方法直接加入 T1<br/>不新开事务"]
+        R2 --> R3["仍只有 1 条连接"]
+        R3 --> R4["内层抛异常 → 整个 T1 回滚<br/>波及外层"]
+    end
+    subgraph REQUIRES_NEW["② REQUIRES_NEW 另起炉灶"]
+        direction TB
+        N1["外层事务 T1<br/>1 条连接"] --> N2["内层新开 T2<br/>另占 1 条连接"]
+        N2 --> N3["共占 2 条连接"]
+        N3 --> N4["内层异常只回滚 T2<br/>外层 T1 不受影响"]
+    end
+    subgraph NESTED["③ NESTED 打存档点"]
+        direction TB
+        E1["外层事务 T1<br/>1 条连接"] --> E2["内层打存档点 savepoint<br/>仍用同一连接"]
+        E2 --> E3["还是 1 条连接"]
+        E3 --> E4["内层异常回滚到存档点<br/>外层 T1 可继续"]
+    end
+```
+
+> **生活类比：事务套事务的两种打开方式**——`REQUIRES_NEW` 像**开第二个独立收银台**：旧单先挂着（外层挂起），新单独立结算、独立回滚，互不牵连——代价是多占一个收银员（多占一条数据库连接）。`NESTED` 像**同一张单上打一个存档点（savepoint）**：出错了回滚只回到存档那一刻，整张单还在、后面还能继续，全程同一个收银员。`REQUIRED` 最简单：有单就并进去，同一条连接、同生共死。
 
 #### 2.3 五大失效场景（高频考点，必须能推导而不是背）
 
@@ -307,7 +370,7 @@ public class OrderService {
 ### 3. 事件机制
 
 ```java
-// ① 定义事件：ApplicationEvent 的子类（或任意 POJO，Spring 4.2+ 不强制继承）
+// ① 定义事件：ApplicationEvent 的子类（或任意 POJO——Plain Old Java Object，普通 Java 对象，没继承任何框架基类的「干净」类；Spring 4.2+ 不强制继承）
 public record OrderPlacedEvent(Long orderId, BigDecimal amount) {}
 
 @Service

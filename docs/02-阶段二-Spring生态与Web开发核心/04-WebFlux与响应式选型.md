@@ -79,6 +79,11 @@ public class ReactorDemo {
 
 ### 1. Reactor 核心
 
+> 🧩 **前置 30 秒：Mono/Flux 与你已有的对照**——速记卡先收下：
+> - **Mono ≈ 单值的 Promise**（装 0-1 个值）；**Flux ≈ RxJS 的 Observable**（装 0-N 个值的流）——前端心智可以直接搬。
+> - 最大的差异只有一条：**Promise 是「急性」的**——`new Promise` 一出来立即开跑；**Mono/Flux 默认是「冷」的**——不订阅不执行，且每次订阅都从头重跑一遍。
+> 所以把 RxJS 管道搬过来，最该改的不是操作符，而是「有没有 subscribe」这个心智——细节在本节下文「对照前端心智的另一个落差」（L101）展开。
+
 **Reactor**：Spring 的响应式库——把「异步 + 序列」编码成类型：`Mono<T>`（0-1 个值）、`Flux<T>`（0-N 个值）。你有 RxJS 经验的话，概念几乎零成本迁移；最大落差是**调试**：调用栈被操作符切断，异常现场看不到你的业务代码。
 
 > ⏸️ **短期可以不学**：Reactor 操作符全集（`flatMap` / `concatMap` / `zip` / `combineLatest`……）现在硬背没有抓手——没有真实流式场景，学完就忘，投入产出比低。**何时回来学**：真正开始做网关 / SSE 流式推送 / 数据管道，需要组装操作符链时。**面试最低要求**：能说清 `Mono`（0-1 个值）与 `Flux`（0-N 个值）、「惰性：订阅才执行」即可。
@@ -104,6 +109,23 @@ pipeline.subscribe(v -> System.out.println(v));   // 终端: 订阅(≈ Observab
 
 **背压（Backpressure）**：下游通过 `request(n)` 声明「我最多再要 n 个」，上游按需生产——解决「快生产者淹没慢消费者」的内存爆炸。这是 RxJS 的 `take` 模拟不来的真流控：`take(n)` 只是消费端「截取 n 个就停」的单向动作，上游根本不知道你慢；`request(n)` 是订阅协议里的**双向协商**，上游会真的按 n 生产（EventEmitter 根本没有这个概念）。
 
+**自助餐出餐口类比（生活版）**：生产者 = 后厨的出餐速度，大盘菜源源不断端出来；消费者 = 你的吃速。没有背压 = 出餐口不管你吃没吃完，一直往你桌上堆盘子，越堆越高直到「桌子塌了」——对应内存被未消费的元素撑爆。`request(n)` 就是你说「我盘子空了，再给我上一份」——节奏由消费者掌控，后厨永远只领先你一步。
+
+**换成 Java**：`request(n)` 是订阅协议（Publisher ↔ Subscriber）里的双向协商，上游真的按 n 生产——下游慢，上游就跟着慢，没人抢跑。代码跑起来就是这个节奏：
+
+```mermaid
+sequenceDiagram
+    participant 消费者
+    participant 上游
+
+    消费者->>上游: request(1) ——「我盘子空了再给我一份」
+    上游-->>消费者: 发送 1 个元素
+    消费者->>消费者: 处理(慢: 写库/调下游)
+    消费者->>上游: 处理完, 再 request(1)
+    上游-->>消费者: 再发 1 个元素
+    Note over 消费者,上游: 上游永远只领先消费者一步以内
+```
+
 ```java
 Flux.range(1, 1_000_000)                  // 百万个元素的"无限"源
     .log()
@@ -121,7 +143,7 @@ Flux.range(1, 1_000_000)                  // 百万个元素的"无限"源
 ```
 
 - 内置缓冲策略（`onBackpressureBuffer` / `Drop` / `Latest`）是「上游不支持背压时」的兜底——**能源头限流就不靠缓冲**。
-- WebFlux 的 HTTP 客户端 / 数据库驱动（R2DBC）都支持 request 语义，链路才真正闭环。
+- WebFlux 的 HTTP 客户端 / 数据库驱动（**R2DBC**——Reactive Relational Database Connectivity，响应式关系数据库连接协议，可以理解成 JDBC 的非阻塞版：不占线程傻等数据库）都支持 request 语义，链路才真正闭环。
 
 > ⏸️ **短期可以不学**：背压缓冲策略（Buffer / Drop / Latest）的取舍要等真正写流式管道才用得上，现在记等于背字典。**何时回来学**：做消息管道 / 数据同步 / 大流量 SSE 的削峰与降级时。**面试最低要求**：能讲清背压解决什么问题、`request(n)` 拉取机制怎么实现即可。
 
@@ -145,7 +167,7 @@ RouterFunction<ServerResponse> routes(OrderHandler h) {
 }
 ```
 
-> ⏸️ **短期可以不学**：函数式路由（RouterFunction）是轻量管道型场景的备选写法，绝大多数业务用注解式就够——两种模型都熟练的成本没必要现在付。**何时回来学**：做网关 / 轻量 BFF / 不需要 Controller 层的纯管道服务时。**面试最低要求**：知道 WebFlux 有「注解式 + 函数式」两种编程模型、注解式是默认主力即可。
+> ⏸️ **短期可以不学**：函数式路由（RouterFunction）是轻量管道型场景的备选写法，绝大多数业务用注解式就够——两种模型都熟练的成本没必要现在付。**何时回来学**：做网关 / 轻量 **BFF**（Backend for Frontend——专为前端聚合接口的薄后端层：一个接口帮你把多个下游数据拼好再返回）/ 不需要 Controller 层的纯管道服务时。**面试最低要求**：知道 WebFlux 有「注解式 + 函数式」两种编程模型、注解式是默认主力即可。
 
 ```java
 // SSE 最小示例: Flux<ServerSentEvent<T>> 能带事件名/id/重试间隔 —— 这就是流式推送的落点
@@ -155,8 +177,8 @@ Flux<ServerSentEvent<ChatChunk>> sse() {
 }
 ```
 
-- **纪律成本**：WebFlux 跑在 Netty（Java 生态最主流的异步事件驱动网络框架，网关与 WebFlux 的事件循环都建立在它之上）的 EventLoop 上，**任何一处阻塞调用（同步 JDBC / `Thread.sleep` / 同步 HTTP）都会卡死整个 EventLoop 线程**，殃及同线程全部请求——响应式项目里阻塞是事故，不是慢。
-- 全链路都要响应式驱动（R2DBC / WebClient / Reactive Redis），混一个同步 ORM 就全盘失效。
+- **纪律成本**：WebFlux 跑在 Netty（Java 生态最主流的异步事件驱动网络框架，网关与 WebFlux 的事件循环都建立在它之上）的 **EventLoop**（事件循环——就是 Node 事件循环的同类机制，Java 版由 Netty 提供）上，**任何一处阻塞调用（同步 JDBC / `Thread.sleep` / 同步 HTTP）都会卡死整个 EventLoop 线程**，殃及同线程全部请求——响应式项目里阻塞是事故，不是慢。**场景类比**：一个核一个 EventLoop 线程，相当于餐厅一个核一个服务员——他跑去厨房帮忙洗碗（阻塞调用），他负责的所有桌子全部饿着（同线程全部请求陪葬）；前端读者可对照「Node 事件循环里写一个同步死循环会卡死所有请求——同一个道理」。
+- 全链路都要响应式驱动（R2DBC / **WebClient**（Spring 自带的响应式 HTTP 客户端——≈ axios 的响应式版）/ Reactive Redis），混一个同步 ORM 就全盘失效。
 
 ### 4. 选型判断（本讲最重要的一页）
 
@@ -176,11 +198,22 @@ spring.threads.virtual.enabled=true
 
 > **判断口诀**：先问「要不要背压 / 流式管道」，再问「团队是否接受全链路响应式纪律」，两个都不是——留在 WebMVC。把 WebFlux 当「特定场景的专项工具」，不是「更先进的默认选择」。
 
+**判断口诀图化（决策树）**：
+
+```mermaid
+flowchart TD
+    A{要不要背压或流式管道?}
+    A -- 否 --> B[留在 WebMVC + 虚拟线程<br/>绝大多数业务都停在这]
+    A -- 是 --> C{团队接受全链路响应式纪律?}
+    C -- 否 --> B
+    C -- 是 --> D[上 WebFlux<br/>网关 / SSE 流式推送 / 精细背压管道]
+```
+
 ### 坑点提醒
 
 - **WebFlux 里写同步 JDBC**：上线即偶发「整个服务卡住」——EventLoop 线程只有核数个，一个卡死一批请求陪葬；阻塞代码一律 `publishOn(Schedulers.boundedElastic())` 甩出去。但要清楚：`boundedElastic` 本质是个弹性线程池，只是给阻塞代码划的「隔离区」——不解决背压问题，也不省内存，慢任务堆积照样会出事。
 - **`Mono.just(expensiveCall())`**：方法调用在组装时立即执行且只执行一次——想要「每次订阅才发生」用 `Mono.defer()`。
-- **返回 `Mono<Void>` 忘记 subscribe 链路闭合**：`return ok().build()` 这类要原样返回 Mono 给框架订阅；自己 `.subscribe()` 掉等于把异步变火忘。
+- **返回 `Mono<Void>` 忘记 subscribe 链路闭合**：`return ok().build()` 这类要原样返回 Mono 给框架订阅；自己 `.subscribe()` 掉等于把异步变成 fire-and-forget（发射后不管——出了错没人善后）。
 - **把背压当默认能力**：中间任何一环（HTTP body 解析、第三方 SDK）不支持 request 语义，整条链路背压即断裂，退化回缓冲兜底。
 
 ## 本节自检
@@ -202,7 +235,7 @@ spring.threads.virtual.enabled=true
 **答**：标准答案：绝大多数业务系统不需要——虚拟线程（Java 21+ 开启 `spring.threads.virtual.enabled=true`）让「一请求一线程」的同步写法也能扛百万级阻塞 IO，编程心智、调试体验、生态成熟度全部保留；WebFlux 只在三类场景值得：**API 网关**（Netty 非阻塞 + 请求转发管道）、**SSE 流式推送 / 长连接**（背压控制）、**需要精细背压的管道型服务**。原理层：虚拟线程解决的是「阻塞 IO 占线程」的成本问题——阻塞变成廉价操作；WebFlux 解决的是「生产者快消费者慢」的流控问题——两者解决的不是同一个问题，WebMVC + 虚拟线程天然没有背压语义。工程层：选型口诀是「先问要不要背压 / 流式管道，再问团队接不接受全链路响应式纪律」，两个都不是就留在 WebMVC；WebFlux 是特定场景的专项工具，不是更先进的默认选择。
 
 ### Q2：Mono 和 Flux 是什么？为什么说响应式是惰性的？
-**答**：标准答案：`Mono<T>` 是 0-1 个值的响应式容器，`Flux<T>` 是 0-N 个值的流；两者都来自 Reactor 库，是 WebFlux 的编程基础。惰性指的是：`.map` / `.filter` / `.flatMap` 这些操作符只是**登记**一条流水线，一行代码都不会执行，直到 `.subscribe()` 触发订阅才开始跑——等价于「定义了函数但没调用」。原理层：对比前端心智，Promise 是急性的（`new Promise` 立即执行），Mono/Flux 默认是**冷流**——不订阅不执行，且每次订阅都从头重新执行一遍，所以副作用（发请求 / 写库）必须显式表达，藏在操作符链里不会自动发生。工程层：这个特性既是安全网（没订阅不会误触发副作用）也是坑——忘记 subscribe 等于把异步变火忘（返回 `Mono<Void>` 的接口原样返回给框架订阅即可）；`Mono.just(expensiveCall())` 会在组装时立即执行一次，想要「每次订阅才发生」要用 `Mono.defer()`。
+**答**：标准答案：`Mono<T>` 是 0-1 个值的响应式容器，`Flux<T>` 是 0-N 个值的流；两者都来自 Reactor 库，是 WebFlux 的编程基础。惰性指的是：`.map` / `.filter` / `.flatMap` 这些操作符只是**登记**一条流水线，一行代码都不会执行，直到 `.subscribe()` 触发订阅才开始跑——等价于「定义了函数但没调用」。原理层：对比前端心智，Promise 是急性的（`new Promise` 立即执行），Mono/Flux 默认是**冷流**——不订阅不执行，且每次订阅都从头重新执行一遍，所以副作用（发请求 / 写库）必须显式表达，藏在操作符链里不会自动发生。工程层：这个特性既是安全网（没订阅不会误触发副作用）也是坑——忘记 subscribe 等于把异步变成 fire-and-forget（发射后不管——出了错没人善后）（返回 `Mono<Void>` 的接口原样返回给框架订阅即可）；`Mono.just(expensiveCall())` 会在组装时立即执行一次，想要「每次订阅才发生」要用 `Mono.defer()`。
 
 ### Q3：什么是背压？`request(n)` 是怎么实现的？
 **答**：标准答案：背压（Backpressure）是「快生产者 + 慢消费者」场景下的流控协议——下游通过 `request(n)` 声明「我最多再要 n 个」，上游按需生产，防止下游来不及消费导致内存被未消费元素撑爆。原理层：Reactor 的订阅协议（`Publisher` ↔ `Subscriber`）里，订阅建立时上游把 `Subscription` 交给下游，下游每次 `request(n)` 才从上游「拉取」n 个元素，上游生产永远领先消费者一步以内；`take(n)` 之类的消费端截断不是背压——它不通知上游按量生产，上游照样全量生产只是消费端丢弃。工程层：背压要全链路闭环才有意义——WebFlux 的 HTTP 客户端、R2DBC 驱动都支持 request 语义；中间任何一环（第三方 SDK、同步调用）不支持，链路就会退化回「全量缓冲 + 兜底策略」（`onBackpressureBuffer` / `Drop` / `Latest`），所以能源头限流就别依赖缓冲。

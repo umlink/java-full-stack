@@ -7,6 +7,8 @@
 
 > 本节为「安全速览」：先认识认证（你是谁）与授权（你能干什么）的区别、JWT 是什么；「过滤器链细节、OAuth/PKCE」留在正文提高部分。
 
+> 🧩 **前置 30 秒：你其实已经会一半**——Cookie 和 localStorage 存 token 的纠结、401（没登录 / 凭证失效，去重新登录）与 403（登录了但权限不够）、XSS / CSP、CORS，这些你在前端早已熟悉的概念，本讲原样复用，后端只是换个位置实现。本讲真正的新东西只有两件：**过滤器链**（请求进 Spring 要先过一串安检门）和**认证 / 授权的分层架构**（谁管「你是谁」、谁管「你能不能」）。细节在第 1 节「架构核心」展开。
+
 ### 本讲核心关键词速查
 
 | 关键词 | 一句话大白话 | 例子 |
@@ -35,9 +37,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain)
             throws ServletException, IOException {
         String header = req.getHeader("Authorization");
-        if (header != null && header.startsWith("Bearer ")) {
-            var claims = jwtService.parse(header.substring(7));   // 验签 + 解析(返回自定义 record Claims)
-            var auth = new UsernamePasswordAuthenticationToken(   // 构造认证对象
+        if (header != null && header.startsWith("Bearer ")) {    // Bearer = 持有者凭证: 谁拿到谁能用, 不记名
+            var claims = jwtService.parse(header.substring(7));   // 验签 + 解析(返回自定义 record Claims; claims = JWT payload 里的键值对字段)
+            var auth = new UsernamePasswordAuthenticationToken(   // 认证结果的数据载体, 名字是历史遗留, JWT 认证也用它
                 claims.subject(), null, claims.authorities());    // record 访问器风格
             SecurityContextHolder.getContext().setAuthentication(auth);  // 放进上下文, 下游授权层读它
         }
@@ -47,11 +49,12 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 ```
 
 > 代码备注（逐行解释）：
-> - `getHeader("Authorization")`：从请求头拿 token（约定 `Bearer xxx`）。
+> - `getHeader("Authorization")`：从请求头拿 token（约定 `Bearer xxx`——Bearer 即「持有者凭证」：谁拿到谁能用，token 不绑定设备、不记名，所以叫「不记名凭证」）。
 > - `header.substring(7)`：去掉 `Bearer ` 前缀，拿到纯 token。
-> - `jwtService.parse(...)`：**验签 + 解析** token，取出用户信息（subject）和权限。
-> - `UsernamePasswordAuthenticationToken`：把解析出的身份包成一个「认证对象」。
+> - `jwtService.parse(...)`：**验签 + 解析** token，取出用户信息（subject）和权限。claims（声明）是 JWT payload 里的键值对字段——如 `sub`（用户 id）、`exp`（过期时间）、`roles`（角色），就是身份卡上的一格格信息。
+> - `UsernamePasswordAuthenticationToken`：把解析出的身份包成一个「认证对象」。这个名字是历史遗留——它只是「认证结果的数据载体」，JWT 认证也用它，别被名字带偏。
 > - `SecurityContextHolder...setAuthentication(auth)`：**关键**——放到线程上下文里，后面的 `@PreAuthorize` 授权层才能读到「你是谁、有什么权限」。
+> - `chain.doFilter(req, res)`：**放行**——把请求交给链上下一个过滤器（FilterChain = 这条过滤器链本身，「链」字就在这），链全部走完请求才进得了 DispatcherServlet；某一步验证失败直接 `return` 不调用它，请求就被拦在安检门外。
 
 ### 关键概念 / 注解说明
 
@@ -67,7 +70,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 ### 常用约定 / 命名提示
 
 - **认证 vs 授权**：认证解决「你是谁」——校验凭据（密码 / token）证明身份可信；授权解决「你能干什么」——身份可信之后才判权限。**顺序固定：先认证后授权**，越过认证直接放行是漏洞根源。
-- **JWT 不加密**：Payload 是 Base64，能被人看到，别放敏感信息；签名（Signature）保证的是**完整性**（Integrity，防篡改），不保证**机密性**（Confidentiality，防偷看）——敏感数据要么放服务端只存 id，要么用 JWE（JWT Encryption）加密整个 JWT。
+- **JWT 不加密**：Payload 是 Base64 编码——注意**编码 ≠ 加密**：Base64 只是换个字符表示（把二进制转成可打印字符），没有密钥参与，任何拿到 token 的人都能原样解码读回；所以能被人看到，别放敏感信息。签名（Signature）保证的是**完整性**（Integrity，防篡改），不保证**机密性**（Confidentiality，防偷看）——敏感数据要么放服务端只存 id，要么用 JWE（JWT Encryption）加密整个 JWT。
 - **越权（Privilege Escalation）是最常见漏洞**：「登录了就放行」≠「能访问这条资源」——每个资源接口都要校验属主（水平越权 Horizontal Privilege Escalation：拿别人的 id 看别人的数据）。
 - **白名单要注意**：`/actuator/**`、`/v3/api-docs` 这些别裸奔公网，记得配访问控制。
 
@@ -83,7 +86,22 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
 ### 1. 架构核心
 
-**过滤器链**：Security 是建在 Servlet Filter 上的一组有序过滤器——认证过滤器认「你是谁」、授权过滤器判「你能不能」、异常过滤器把拒了的转成 401/403。请求要闯过整条链才到得了 DispatcherServlet。
+**过滤器链**：Security 是建在 Servlet Filter 上的一组有序过滤器——认证过滤器认「你是谁」、授权过滤器判「你能不能」、异常过滤器把拒了的转成 401/403。请求要闯过整条链才到得了 DispatcherServlet（第 3 讲的请求总调度台——所有请求进入 Spring 后最先落在这里，再分发给对应的 Controller）。整体流程如下：
+
+```mermaid
+flowchart TB
+    A[浏览器<br/>发出请求] --> B[Servlet 容器过滤器链<br/>最外层安检门]
+    B --> C[SpringSecurityFilterChain<br/>本身也是一个 Servlet Filter<br/>排在容器链最前]
+    C --> D[你的 JwtAuthFilter<br/>取 token 验签<br/>身份塞进 SecurityContext]
+    D --> E[认证过滤器<br/>认「你是谁」]
+    E --> F{认证通过?}
+    F -- 否 --> X1[401 未认证<br/>没登录 / 凭证失效<br/>请重新登录]
+    F -- 是 --> G[AuthorizationFilter<br/>判「你能不能」]
+    G --> H{授权通过?}
+    H -- 否 --> X2[403 权限不足<br/>禁止访问]
+    H -- 是 --> I[DispatcherServlet<br/>第 3 讲的请求总调度台]
+    I --> J[Controller<br/>你的业务代码]
+```
 
 > **位置说明**：`SpringSecurityFilterChain` 本身就是一个 Servlet Filter，排在容器过滤链**最前**；自定义 JWT Filter 加在 `UsernamePasswordAuthenticationFilter` 之前，语义是「先解析令牌填充 SecurityContext，再走标准认证/授权流程」——插错位置，后面的授权过滤器看到的就是空上下文。
 
@@ -98,9 +116,7 @@ public class SecurityConfig {
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http, JwtAuthFilter jwtFilter) throws Exception {
         return http
-            .csrf(csrf -> csrf.disable())     // 关 CSRF(Cross-Site Request Forgery): 它防的是「浏览器自动携带 Cookie」
-                                             // 的伪造请求; JWT 放 Authorization 头由 JS 显式携带, 攻击者网站无法让
-                                             // 浏览器带上你的 token, 故可关 —— 一旦改回 Cookie+Session 必须开回来
+            .csrf(csrf -> csrf.disable())     // 关 CSRF: 纯 JWT 方案可关, 原理见代码块下方正文 —— 一旦改回 Cookie+Session 必须开回来
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS)) // 不建 session
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/v1/auth/**").permitAll()        // 登录/注册白名单
@@ -119,7 +135,17 @@ public class SecurityConfig {
 }
 ```
 
-- **认证四件套**：`SecurityContextHolder`（ThreadLocal 存当前身份——Servlet 每请求一线程，身份随线程传递天然隔离，上下文生命周期 = 请求生命周期，避免全局共享的并发脏读）← `Authentication`（认证结果对象）← `AuthenticationManager → ProviderManager → AuthenticationProvider`（委派式：一种认证方式一个 Provider——密码 / OTP / LDAP / JWT，Manager 按 token 类型挑 Provider，新增认证方式只加 Provider 不改主流程）← `UserDetailsService`（你实现的「按用户名查用户」接口）。
+- **CSRF 为什么能关（Cookie 自动带 vs JWT 手动带）**：生活版——Cookie 是浏览器**自动带的门票**：每次请求浏览器都无脑把它塞进请求头，所以第三方网站只要诱导你访问一次恶意页面，就能借你身上这张门票替你发请求（转账、改密），这就是 CSRF（跨站请求伪造）；而 JWT 放 `Authorization` 头是**手动出示的门禁卡**：由 JS 显式携带，浏览器不会自动带，攻击者网站拿不到你的 token，自然伪造不出请求。换成 Spring Security——纯 JWT 方案天然免疫 CSRF，所以配置里 `csrf.disable()` 可以放心关；但**一旦改回 Cookie + Session 方案，必须开回来**。
+- **认证四件套（酒店入住）**：生活版——办入住时，前台先查「当日入住名单」里有没有你的预订（查房客登记表），再核对证件照「人证是否一致」，不同证件走不同窗口（护照 / 身份证 / 驾照），大堂经理按你出示的证件类型把你分派到对应窗口，最后你的名字记进入住名单。换成 Spring Security——**AuthenticationManager** = 大堂经理（委派式：实际实现是 `ProviderManager`，按 token 类型把活派给对应 Provider；新增认证方式只加 Provider、不改主流程）；**AuthenticationProvider** = 证件窗口（一种认证方式一个 Provider——密码 / OTP 一次性验证码 / LDAP 企业目录服务认证协议，统一管理公司员工账号 / JWT）；**UserDetailsService** = 查房客登记表（你实现的「按用户名查用户」接口）；**PasswordEncoder** = 核对证件照（密码比对，第 1 节的 BCrypt）；**SecurityContextHolder** = 前台手里那份「当日入住名单」（ThreadLocal 存当前请求身份——Servlet 每请求一线程，身份随线程传递天然隔离，上下文生命周期 = 请求生命周期，请求结束即销毁，避免全局共享的并发脏读）。「四件套」协作如下：
+
+```mermaid
+flowchart LR
+    M[AuthenticationManager<br/>大堂经理<br/>按 token 类型挑 Provider] --> P[AuthenticationProvider<br/>证件窗口<br/>密码 / OTP / LDAP 各一窗]
+    P --> U[UserDetailsService<br/>查房客登记表<br/>按用户名查用户]
+    P --> E[PasswordEncoder<br/>核对证件照<br/>密码比对]
+    P --> A[产出 Authentication<br/>认证结果对象]
+    A --> H[SecurityContextHolder<br/>当日入住名单<br/>ThreadLocal 存当前请求身份]
+```
 
 ### 2. JWT：无状态认证（Stateless Authentication）的代价与补法
 
@@ -134,7 +160,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {   // OncePerRequestFil
         String header = req.getHeader("Authorization");
         if (header != null && header.startsWith("Bearer ")) {
             try {
-                var claims = jwtService.parseAndVerify(header.substring(7));  // HS256 验签 + 过期检查
+                var claims = jwtService.parseAndVerify(header.substring(7));  // HS256 验签(对称算法: 签与验用同一把密钥) + 过期检查
                 var auth = new UsernamePasswordAuthenticationToken(
                         claims.subject(), null, claims.authorities());         // 解析出的身份
                 SecurityContextHolder.getContext().setAuthentication(auth);    // 放进行文上下文, 下游 @PreAuthorize 读它
@@ -147,8 +173,32 @@ public class JwtAuthFilter extends OncePerRequestFilter {   // OncePerRequestFil
 }
 ```
 
-- **双 token 续期**：短命 access token（15min，验签用，不落库）+ 长命 refresh token（7d，存 Redis/DB，可撤销）→ 过期前用 refresh 换新 access；前端在 401 时静默刷新重试。
+- **双 token 续期**：短命 access token（15min，验签用，不落库）+ 长命 refresh token（7d，存 Redis（缓存数据库，阶段三第 4 讲展开）/DB，可撤销）→ 过期前用 refresh 换新 access；前端在 401 时静默刷新重试，整条链路如下：
+
+```mermaid
+sequenceDiagram
+    participant F as 前端<br/>axios 拦截器
+    participant S as 服务端<br/>过滤器链
+    F->>S: 带 access token 调接口
+    S-->>F: 401 access 过期
+    F->>S: 拿 refresh token 换新 access
+    S-->>F: 新 access token
+    F->>S: 静默重试原请求<br/>用户无感
+```
+
+> **前端回收**：你在前端写过的「401 拦截 → 刷新 token → 重试原请求」逻辑，就是这套方案的前端半边——后端只负责签发新 token，何时触发、怎么重试、怎么做到用户无感，全在 axios 拦截器里，前端经验直接平移。
 - **登出怎么登**：JWT 天然无法撤销——登出时把 `jti`（JWT ID，签发时生成的全网唯一标识）写进 **Redis 黑名单**（TTL = token 剩余寿命），网关/过滤器验签后多查一次黑名单。「无状态」省了 session，但撤销需求一来，状态又回来了（只是换了地方）——这是 JWT 方案必须接受的代价。
+
+```mermaid
+sequenceDiagram
+    participant F as 前端
+    participant S as 服务端<br/>过滤器链
+    participant R as Redis 黑名单
+    F->>S: 登出(带 token)
+    S->>R: 写入 jti<br/>TTL = token 剩余寿命
+    S-->>F: 登出成功
+    Note over S,R: 之后每次验签都多查一次黑名单<br/>jti 在名单里 = 已登出, 拒绝
+```
 
 ### 3. OAuth 2.1 / OIDC：别把「授权」当「登录」
 
@@ -184,6 +234,8 @@ public void refund(Long orderId) { ... }
 @PreAuthorize("#order.ownerId == authentication.principal.userId " +   // 「只能改自己的单」
               "or hasRole('ORDER_ADMIN')")                               // 管理员例外
 public void cancel(Order order) { ... }   // 参数是 Order, 才有 .ownerId; principal 为自定义 UserDetails(含 userId)
+                                          // UserDetails = 「用户信息的标准接口」(你实现它告诉 Security 当前用户是谁);
+                                          // principal = 「当前登录主体」的泛称, 认证通过后 SecurityContext 里的那个人
 ```
 
 - RBAC（Role-Based Access Control，基于角色）管功能入口，ABAC（Attribute-Based Access Control，基于属性：部门 / 数据范围 / 时间）管数据边界——企业后台通常 RBAC 为骨、数据权限（部门树 / 本人）为肉（项目一 RBAC 会完整落地）。
@@ -192,7 +244,17 @@ public void cancel(Order order) { ... }   // 参数是 Order, 才有 .ownerId; p
 ### 5. SSO 与微服务鉴权
 
 - **SSO**：同一授权服务器签 token，多个子系统认同一张票；「在 A 站登录、B 站已登录」靠授权服务器侧的会话完成。
-- **微服务鉴权分层**：网关统一验签 + 解析身份 → 透传 `X-User-Id` / JWT 头 → 下游服务只信「来自网关的内部流量」。注意：网关传给后端的 `X-User-Id` 需配合内网隔离或内部签名/mTLS，否则任何内网调用方都能伪造（阶段四第 5 讲、阶段六第 5 讲展开）。
+- **微服务鉴权分层**：网关统一验签 + 解析身份 → 透传 `X-User-Id` / JWT 头 → 下游服务只信「来自网关的内部流量」：
+
+```mermaid
+flowchart LR
+    C[客户端<br/>浏览器 / App] --> G[API 网关<br/>统一验签 + 解析身份<br/>认证只做一次]
+    G -- 透传 X-User-Id / JWT 头 --> S1[订单服务<br/>只信内部流量]
+    G -- 透传 X-User-Id / JWT 头 --> S2[用户服务<br/>只信内部流量]
+    G -- 透传 X-User-Id / JWT 头 --> S3[库存服务<br/>只信内部流量]
+```
+
+注意：网关传给后端的 `X-User-Id` 需配合内网隔离或内部签名/mTLS（双向证书认证——网关与服务互相验证证书，第 2 讲前置框同源的 TLS 知识），否则任何内网调用方都能伪造（阶段四第 5 讲、阶段六第 5 讲展开）。
 - 反模式：每个服务各自对前端验 token + 各自维护权限表——权限逻辑散落，改一次密码策略发 N 个服务。
 
 > ⏸️ **短期可以不学**：SSO 与网关统一鉴权建立在「多系统 / 微服务」架构上，单机单体项目用不上，且细节已在阶段四、阶段六对应讲次展开。**何时回来学**：项目拆成多个服务、或要接公司统一登录平台时。**面试最低要求**：能说出「网关统一验签 + 透传身份头 + 下游只信内部流量」的架构原则，以及「每服务各自验 token」是反模式即可。
@@ -216,7 +278,7 @@ public void cancel(Order order) { ... }   // 参数是 Order, 才有 .ownerId; p
 
 1. Session + Cookie 与 JWT 两种方案，在「服务端水平扩容」「登出即时生效」「移动端弱网」三个维度各输赢在哪？
 2. 微信登录场景里，你是 OAuth 的哪个角色？「用微信返回的 openid 建账号」时，身份的可信边界在哪（openid 可被伪造吗，谁验）？
-3. 把 `hasRole('ADMIN')` 写进每个方法是正解吗？什么规模下该收敛成统一授权服务（PAP / OPA 思想）？
+3. 把 `hasRole('ADMIN')` 写进每个方法是正解吗？什么规模下该收敛成统一授权服务（PAP / OPA 思想——把「谁有权做什么」的判定集中到一个统一策略引擎里，业务代码只问结果；知道名词即可）？
 
 ## 常见面试题
 
@@ -240,7 +302,7 @@ public void cancel(Order order) { ... }   // 参数是 Order, 才有 .ownerId; p
 
 **答**：JWT 的 Payload 只做 Base64 编码，任何人可解码阅读——签名只保证「没被篡改」，不保证「不被看见」：完整性（Integrity）≠ 机密性（Confidentiality）。
 
-原理层：签名用 HMAC（HS256）或非对称（RS256）对 header.payload 计算摘要，验签通过说明内容未被改动，但内容本身是明文的；要保密得用 JWE（JWT Encryption）整体加密，但那会失去「任意服务端都能验」的轻量性，所以默认方案是「签名不加密」。
+原理层：签名用 HMAC（HS256）或非对称（RS256）对 header.payload 计算摘要——对称算法（HS256）签和验用同一把密钥，适合单体服务自签自验；非对称算法（RS256）私钥签、公钥验，适合多服务共享公钥验签。验签通过说明内容未被改动，但内容本身是明文的；要保密得用 JWE（JWT Encryption）整体加密，但那会失去「任意服务端都能验」的轻量性，所以默认方案是「签名不加密」。
 
 工程层：token 里只放 subject（用户 id）、角色、过期时间，绝不放密码 / 手机号 / 身份证；敏感数据放服务端，token 只做「钥匙」。CSRF 之所以不构成威胁，是因为 token 在 Authorization 头由 JS 显式携带（浏览器不会自动附带）；而 XSS 才是 JWT 方案的头号风险——脚本注入可直接窃取 token，所以 CSP、输入输出转义是必配。
 
