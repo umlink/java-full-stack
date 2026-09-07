@@ -91,7 +91,7 @@ spec:
 ### 1. 从 Compose 到 K8s：为什么需要「编排」
 
 - **Compose 管「一台机器上的多容器」**；**K8s 管「一堆机器上的大量容器」**：谁挂在哪台机器、挂了谁顶上、流量怎么找到它、发布怎么不中断——这四件事就是「编排」。
-- **声明式 API**：你提交「期望状态」（YAML），K8s 的**控制器**持续把实际状态向期望收敛——类比 React 的 `setState`：你声明 UI 应该长什么样，框架负责 diff 并更新 DOM。排障心法也一致：别问「我改了什么」，问「期望状态和实际状态差在哪」。
+- **声明式 API**：你提交「期望状态」（YAML），K8s 的**控制器（Controller）**通过**调谐循环（Reconcile Loop）**持续把实际状态向期望收敛——类比 React 的 `setState`：你声明 UI 应该长什么样，框架负责 diff 并更新 DOM。排障心法也一致：别问「我改了什么」，问「期望状态和实际状态差在哪」。控制器是「带眼睛的循环」而不是一次性执行：Pod 被杀它再拉起、节点挂了它把副本调度到别处——这就是「自愈」的底层机制。
 
 ### 2. 核心对象与第一个完整部署
 
@@ -101,7 +101,9 @@ spec:
 | 服务发现 | Service / Ingress | 稳定访问入口 / 七层路由 |
 | 配置存储 | ConfigMap / Secret / PV / PVC | 配置注入与持久卷 |
 
-- **Pod**：最小调度单元 = 一个或一组共生容器（共享网络与存储）。Deployment 管「Pod 要几个、什么样子」；StatefulSet 管有状态服务（数据库类，稳定网络标识 + 顺序伸缩）；DaemonSet 每节点跑一个（日志采集器）；Job / CronJob 跑一次性 / 周期任务。
+- **Pod**：最小调度单元 = 一个或一组共生容器（共享网络与存储）。Deployment 不直接管 Pod——副本数量交给它创建的 **ReplicaSet（副本控制器）** 去保证，Deployment 只负责版本演进（`Deployment → ReplicaSet → Pod` 三层关系是面试高频）；StatefulSet 管有状态服务（数据库类，稳定网络标识 + 顺序伸缩）；DaemonSet 每节点跑一个（日志采集器）；Job / CronJob 跑一次性 / 周期任务。
+>
+> ⏸️ **短期可以不学**：StatefulSet 的深入运维（扩缩容、备份恢复）只在自运维数据库 / 中间件时才需要——多数公司直接用云托管（RDS 等），主线理解概念即可。**何时回来学**：你需要自运维有状态服务、或面试目标岗位明确做中间件自研时。**面试最低要求**：能说出 StatefulSet 与 Deployment 的三个差异（稳定网络标识 / 顺序伸缩 / 独立持久卷）。
 
 ```yaml
 # deployment.yaml：Spring Boot 服务的完整生产级声明（逐段注释）
@@ -204,7 +206,9 @@ flowchart LR
 | **Ingress** | 「外部 HTTP(S) 流量怎么路由到哪个 Service」——七层规则、TLS 终止 | 不做业务鉴权、不做灰度策略 |
 | **Gateway** | 「业务级路由」——统一鉴权、按 Header/权重灰度、业务限流 | 不直接暴露给公网（通常藏在 Ingress 后面） |
 
-- Service 三种类型：`ClusterIP`（默认，仅集群内）/ `NodePort`（每节点开一个端口）/ `LoadBalancer`（云厂商 SLB）。
+- Service 三种类型：`ClusterIP`（默认，仅集群内）/ `NodePort`（每节点开一个端口）/ `LoadBalancer`（云厂商 SLB）。为什么 Service 的 IP 是「虚拟」的：它不挂在任何网卡上，由 kube-proxy 往每台节点写入 iptables / IPVS 转发规则——Pod 的 IP 随生随死，这个 VIP 永远不变。
+
+> ⏸️ **短期可以不学**：Gateway API（Ingress 的下一代标准，由 Kubernetes SIG 维护，按角色分层、支持多集群与策略组合）已进入主流视野，但存量集群迁移需要时间。**何时回来学**：团队开始引入 Gateway API、或你要做多集群统一入口时。**面试最低要求**：一句话——「Gateway API 是 Ingress 的继任标准，解决 Ingress 的资源角色混杂与扩展性瓶颈」。
 
 ### 4. 发布策略
 
@@ -292,7 +296,7 @@ kubectl describe pod order-service-7d9f-xyz | tail -20
 # Events 输出示例（注释即预期）：
 #   Warning  FailedScheduling  ...  0/5 nodes are available:
 #   5 Insufficient cpu.                     ← requests 加起来没有节点能满足 → 扩节点或降 requests
-#   (或) 1 node(s) had untolerated taint... ← 污点/亲和性问题 → 检查 nodeSelector/tolerations
+#   (或) 1 node(s) had untolerated taint... ← 污点（Taint）/ 容忍（Toleration）、亲和性（Affinity）问题 → 检查 nodeSelector/tolerations
 #   (或) 2 pod has unbound immediate PersistentVolumeClaims  ← PVC 没绑上 PV
 
 # 场景二：CrashLoopBackOff（容器反复崩溃）
@@ -313,7 +317,9 @@ kubectl get pod -l app=order-service --show-labels    # 核对 Pod 实际标签�
 
 - **NetworkPolicy**：K8s 网络默认全通，东西向流量（服务间）要显式声明放行——别裸奔。
 - **Pod Security Standards**：privileged / baseline / restricted 三档，生产用 restricted。
-- **ResourceQuota / LimitRange**：命名空间的资源配额与默认 request/limit——防单个服务吃光集群。
+- **ResourceQuota / LimitRange**：命名空间（Namespace）的资源配额与默认 request/limit——防单个服务吃光集群。
+
+> ⏸️ **短期可以不学**：Operator 开发（用自定义控制器 + CRD 把「运维专家的操作经验」编码成自动化，如 etcd-operator / prometheus-operator）是平台工程方向的能力，业务开发主线不碰。**何时回来学**：你开始做平台工程、或要自研中间件管理时。**面试最低要求**：一句话——「Operator = 自定义控制器 + CRD，把人工运维动作自动化」。
 
 ### 坑点提醒
 
@@ -336,3 +342,35 @@ kubectl get pod -l app=order-service --show-labels    # 核对 Pod 实际标签�
 1. 你的 Deployment replicas=3，但 `kubectl get endpoints` 显示只有 2 个地址，列出至少 3 种可能原因。
 2. 为什么「liveness 失败 → 重启容器」在分布式系统里是危险操作？什么情况下重启反而是唯一解药？
 3. 金丝雀发布相比蓝绿，牺牲了什么换来了什么？什么业务绝不能上金丝雀？
+
+## 常见面试题
+
+### Q1：Kubernetes 的核心组件有哪些？一个新 Pod 从提交到运行的完整流程？
+**答**：
+- **标准结论**：控制面四件套：kube-apiserver（所有操作的入口与唯一事实源）、etcd（存储集群状态）、kube-scheduler（选节点）、kube-controller-manager（运行各类控制器）；数据面：每台节点上的 kubelet（Pod 生命周期的执行者）与 kube-proxy（Service 转发规则）。流程：`kubectl apply` → apiserver 校验并写入 etcd → scheduler 按资源 / 亲和性选出节点 → kubelet 拉镜像起容器 → 探针与就绪状态回写。
+- **底层原理**：核心是声明式 + 调谐循环——Deployment 控制器发现「期望 3 副本、实际 1 个」→ 创建 ReplicaSet → ReplicaSet 创建 Pod → scheduler 绑定节点 → kubelet 干活，每层只关心「期望 vs 实际差多少」。etcd 是唯一事实源、apiserver 是唯一入口、组件间不直接通信——这是一致性与可扩展性的基础。
+- **工程实践**：排障按这条链分层看：`kubectl get events` 看调度、`logs` 看容器、`describe` 看生命周期；Pod 卡 Pending 大概率调度层（资源不足 / 污点 / PV 未绑），CrashLoopBackOff 大概率应用层（配置、依赖、OOM）。加分：能说出 controller-manager 里住着 Deployment / ReplicaSet / Endpoint 等一堆控制器。
+
+### Q2：Service 和 Ingress 有什么区别？
+**答**：
+- **标准结论**：Service 是集群内部的稳定访问入口——用标签选择器选中一组 Pod，提供虚拟 IP + 负载均衡；Ingress 是集群外部 HTTP(S) 流量进集群的入口，按域名 / 路径把请求路由到不同 Service。Ingress 只是规则，真正干活的是 Ingress Controller。
+- **底层原理**：Service 的虚拟 IP 由 kube-proxy 通过 iptables / IPVS 写入每台节点，本质是 L4 转发（不解析 HTTP）；Ingress Controller（如 nginx-ingress）是跑在集群里的反向代理，监听 Ingress 资源并生成代理配置，做 L7 路由与 TLS 终止。为什么分两层：Pod IP 会生会死，需要 Service 兜底；外部流量形态多样（域名、路径、TLS），需要 L7 层接住。
+- **工程实践**：集群内调用（如 Gateway → 业务服务）用 Service（ClusterIP）；对外只暴露一层 Ingress，别为每个服务开 NodePort / LoadBalancer；业务鉴权、灰度放业务网关（Spring Cloud Gateway），Ingress 只做流量入口。加分：说出 Service 三种类型 +「Ingress 是 L7、Service 默认 L4」的分层结论。
+
+### Q3：Deployment 滚动更新是怎么实现的？如何回滚？
+**答**：
+- **标准结论**：滚动更新是默认发布策略——新 ReplicaSet 逐步扩容、旧 ReplicaSet 逐步缩容，`maxSurge` / `maxUnavailable` 控制节奏；回滚用 `kubectl rollout undo`，Deployment 回到上一个 ReplicaSet。
+- **底层原理**：Deployment 不直接管 Pod，每次更新它创建一个新 ReplicaSet，通过两个「保险丝」控制速度：`maxSurge` = 最多多起几个新 Pod（峰值资源上限），`maxUnavailable` = 最多允许几个旧 Pod 不可用（可用性下限）。滚动过程中新旧 ReplicaSet 并存，Service 的 endpoints 同时挂着新旧 Pod，流量按 readiness 探针逐渐切换。回滚本质 = 把期望状态改回旧版本，控制器自动收敛，镜像换回去同样走滚动。
+- **工程实践**：零中断发布要配齐 readinessProbe（新 Pod 就绪才接流量）+ preStop + graceful shutdown（在途请求不丢）；发布前看 `rollout status`，出问题 `rollout undo` 比重新构建发布快得多。加分：回滚不是秒级——它也是一个滚动过程，旧镜像要重新拉取。
+
+### Q4：liveness、readiness、startup 探针有什么区别？配置错了会怎样？
+**答**：
+- **标准结论**：startup 保护慢启动应用（启动期不参与存活判定）；liveness 决定「要不要重启你」（进程自身健康）；readiness 决定「要不要给你流量」（依赖与就绪状态）。三者都支持 httpGet / tcpSocket / exec 三种探测方式。
+- **底层原理**：失败动作不同——liveness 失败 → kubelet 按 restartPolicy 重启容器；readiness 失败 → 从 Service endpoints 摘除（只摘流量不重启）；startup 失败 → 容器被重启。设计动机：重启与摘流量是两种完全不同的「治疗」——摘流量等恢复代价小、重启丢状态代价大，所以只有「进程死了 / 假死」才该走 liveness。
+- **工程实践**：经典事故是 liveness 探依赖接口——下游抖动 → liveness 失败 → 容器反复重启 → 把「下游部分故障」放大成「本服务全灭」。原则：liveness 只探进程自身，依赖检查一律放 readiness；Java 应用必须配 startupProbe 给足冷启动时间，否则启动期就被 liveness 误杀。加分：探针路径要分开（liveness 与 readiness 用不同端点）。
+
+### Q5：requests 和 limits 有什么区别？OOMKilled 是怎么来的？
+**答**：
+- **标准结论**：requests 是调度依据——声明「至少需要多少」，scheduler 按它选节点；limits 是运行上限——超过即被节流或杀死。CPU 超限被节流（throttling），内存超限直接 OOM Kill。
+- **底层原理**：requests 参与节点容量计算与 QoS 分级——Pod 按 requests/limits 被分为 Guaranteed（requests=limits）/ Burstable / BestEffort 三档，资源紧张时 kubelet 按 QoS 优先驱逐 BestEffort。limits 由运行时实现：CPU 用 CFS 配额（节流不杀），内存用 cgroup 限制 + OOM Killer（超了直接杀进程，Pod 显示 OOMKilled，`lastState.terminated.reason` 可查）。
+- **工程实践**：requests 按稳态用量估（别拍脑袋），limits 留 1.2–1.5 倍余量且必须与 JVM 堆参数联动（如 limits 1536Mi 配 `MaxRAMPercentage=75` 保证堆约 1.1G）；全部不设 = BestEffort，集群资源紧张第一个被驱逐；limits 太小 = OOMKilled 循环崩溃。加分：OOMKilled 与 Java 抛 `OutOfMemoryError` 不是一回事——前者是 cgroup 杀进程，可能堆都还没满。

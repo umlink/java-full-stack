@@ -74,7 +74,7 @@ grep -A20 "<16进制nid>" dump.txt             # ⑤ 在栈里找到那个线程
 
 ```bash
 # 进程与资源：先看全局负载再看单进程
-top                     # 概览: 1 看 load average(运行队列长度), 3 看 %wa(IO等待) CPU st(steal)
+top                     # 概览: 1 看 load average(负载均值, 运行队列长度), 3 看 %wa(IO等待) CPU st(steal)
 vmstat 1                # 每秒一行: r(运行队列) b(阻塞) si/so(换页) us/sy/wa —— 趋势定位层
 iostat -x 1             # 磁盘: %util 接近 100 + await 高 = 磁盘饱和
 pidstat -p <pid> 1      # 单进程 CPU/IO 明细
@@ -83,7 +83,7 @@ pidstat -p <pid> 1      # 单进程 CPU/IO 明细
 ss -s                   # 汇总: TCP 连接数分布, TIME-WAIT/CLOSE-WAIT 计数
 ss -tanp | grep order   # 某服务的连接清单(含进程)
 ss -tinp <五元组>      # 单连接的拥塞窗口/RTT —— 慢链路排查(-i 内部信息, -n 数字, -p 进程)
-lsof -p <pid> | wc -l   # 文件描述符占用(连接耗尽先看这个)
+lsof -p <pid> | wc -l   # 文件描述符(File Descriptor, fd)占用(连接耗尽先看这个)
 tcpdump -i any host 10.0.0.5 and port 3306 -w db.pcap   # 抓包终审(阶段一第10讲伏笔): 拿 pcap 进 Wireshark
 
 # 磁盘
@@ -91,12 +91,14 @@ df -h                   # 空间满了: 日志没轮转 / dump 忘删 是 K8s �
 du -sh /var/log/*       # 找占用大头
 ```
 
+> ⏸️ **短期可以不学**：tcpdump / Wireshark 的深度分析是「终审手段」——平时网络链路问题常有 SRE / 网络团队兜底，主线会基本用法即可。**何时回来学**：跨环境调不通、慢链路需要自己拿证据时。**面试最低要求**：能说出 `-w` 落盘 + BPF 过滤（host / port）两个基本动作。
+
 ### 2. Java 进程诊断四件套
 
 | 工具 | 看什么 | 典型场景 |
 |-|-|-|
-| **jstack** | 线程快照 | 死锁（直接 `Found one Java-level deadlock`）、高 CPU 线程（配合第 4 节）、线程池饿死 |
-| **jmap** | 堆直方图 / dump | `jmap -histo:live <pid> | head -20` 快速看谁占堆 → `-dump:live` 留现场给 MAT |
+| **jstack** | 线程快照（Thread Dump） | 死锁（直接 `Found one Java-level deadlock`）、高 CPU 线程（配合第 4 节）、线程池饿死 |
+| **jmap** | 堆直方图 / 堆转储（Heap Dump） | `jmap -histo:live <pid> | head -20` 快速看谁占堆 → `-dump:live` 留现场给 MAT |
 | **jstat** | GC 实时统计 | `jstat -gcutil <pid> 1000`：O 列持续 >85% + FGC 递增 → 内存泄漏画像（第 6 讲） |
 | **Arthas** | 在线方法级诊断 | 不重启进程看参数 / 耗时链 / 类加载来源 |
 
@@ -147,6 +149,8 @@ top -Hp <pid>                           # -H 展开线程列表; 记下最耗 CP
 
 # 步骤 3: 线程号转十六进制
 printf '%x\n' 12345                     # → 3039
+# 为什么能对上: Linux 是 1:1 线程模型(NPTL), 每个 Java 线程 = 一个内核线程,
+# jstack 里的 nid 就是 OS 线程 TID 的 16 进制 —— 所以 top 看到的 TID 能直接 grep 到栈
 
 # 步骤 4: 线程栈里找对应 nid
 jstack <pid> | grep -A 30 'nid=0x3039'
@@ -163,7 +167,7 @@ jstack <pid> | grep -A 30 'nid=0x3039'
 ```
 
 - 常见结局速查：正则灾难性回溯（嵌套量词 `(a+)+b`）、死循环、GC 满负荷（其实是堆问题）、热点方法里的同步 IO、加密 / 序列化风暴。
-- K8s 场景变体：CPU 100% 被 **throttling**（`container_cpu_cfs_throttled_periods` 指标高）≠ 真 CPU 不够——先对齐 requests/limits 与 JVM 参数（第 2 讲）。
+- K8s 场景变体：CPU 100% 被 **throttling**（`container_cpu_cfs_throttled_periods` 指标高）≠ 真 CPU 不够——`limits.cpu` 由 CFS 配额实现，超配额的时间片被强制「节流」，表现为 CPU 用不满但请求变慢——先对齐 requests/limits 与 JVM 参数（第 2 讲），再谈调代码。
 
 ### 5. 实战场景二：连接池耗尽（HikariCP）
 
@@ -190,3 +194,35 @@ jstack <pid> | grep -A 30 'nid=0x3039'
 1. 「load average 20 但 CPU 空闲 90%」——load 的计数里谁在充数（提示：D 状态），第一反应查哪两个命令？
 2. 你的 jstack 显示所有 http 线程都在等 `HikariPool-1 - wait`——从这条线往下画一条完整排查链到根因（结合阶段六第 2 讲的瓶颈清单）。
 3. Arthas `trace` 与火焰图都能找慢方法——什么时候选 trace（已知入口验证假设），什么时候选火焰图（无方向全局采样）？
+
+## 常见面试题
+
+### Q1：线上 Java 服务 CPU 100%，完整的排查步骤？
+**答**：
+- **标准结论**：五步定位：① `top` 找 CPU 高的进程（记 PID）；② `top -Hp PID` 找 CPU 高的线程（记 TID）；③ `printf '%x' TID` 转 16 进制；④ `jstack PID` 抓线程栈，grep `nid=0x...`；⑤ 分析栈顶判断性质并止血。
+- **底层原理**：为什么能定位到行——Linux 是 1:1 线程模型（NPTL），每个 Java 线程对应一个内核线程，jstack 的 nid 就是 OS TID 的 16 进制；jstack 抓的是线程栈快照，高 CPU 线程的栈顶就是它正在执行的代码（含行号）。常见结局：正则灾难性回溯（`(a+)+b` 类嵌套量词）、死循环、热点方法里的同步 IO、GC 满负荷（其实是内存问题伪装成 CPU）。
+- **工程实践**：容器环境先排除 throttling（`container_cpu_cfs_throttled_periods` 高 = limits 配额不够，不是代码问题）；事发时抓栈才有意义，事后重启现场就没了（`kill -3` 打印线程栈的肌肉记忆）；生产用 Arthas `thread -n 5` 比手抓栈更快；优化前后各抓一次栈对比验证。加分：说「RUNNABLE 但栈在 native 方法」说明在等系统调用（网络 read / 磁盘 IO），要往下查 syscall。
+
+### Q2：线上 OOM 怎么排查？
+**答**：
+- **标准结论**：三步：① 确认现象（进程被杀 / 抛 OutOfMemoryError，看 `jstat -gcutil` 或容器 OOMKilled）；② 拿堆转储（Heap Dump）——启动参数 `-XX:+HeapDumpOnOutOfMemoryError` 自动留存，或 `jmap -dump` 手动抓；③ 用 MAT 分析（找占堆最大的对象，Dominator Tree 看引用链）。
+- **底层原理**：OOM 分两类——堆 OOM（对象占满堆、GC 顶不住）和堆外 OOM（元空间、直接内存、线程栈）。堆转储记录了崩溃瞬间的对象快照，MAT 从 GC Root 做可达性分析，找到「明明该被回收却还被引用」的泄漏路径。注意 `-XX:+HeapDumpOnOutOfMemoryError` 必须在启动参数里——事后 `jmap -dump:live` 只抓活对象、还会触发一次 Full GC，现场已被污染。
+- **工程实践**：先止血（重启 / 扩容 / 回滚）再分析，dump 要带现场；常见根因：ThreadLocal 持有大对象、静态集合只增不减、连接池 / 缓存无限增长、日志框架堆栈泄漏；容器环境 OOMKilled ≠ Java 堆 OOM——可能是 cgroup 内存上限（含堆外）被突破，先核对 limits 与 JVM 参数。加分：说「OOM 排查的产出一份内存基线」——把正常与异常的对象分布对比，比单看一次 dump 更高效。
+
+### Q3：怎么用 jstack 排查死锁和线程阻塞？
+**答**：
+- **标准结论**：死锁会被 jstack 直接标注（`Found one Java-level deadlock`），列出互相等待的线程和锁；大量 BLOCKED 不是死锁而是锁竞争——顺着等锁栈找持锁者；线程池饿死表现为大量线程在 WAITING 等任务。
+- **底层原理**：死锁 = 两个线程各持一把锁互等对方那把（循环等待），jstack 做静态分析可直接判定；锁竞争是「很多人等一把快锁」，现象是同一把锁下挂一堆 BLOCKED——找到持锁线程（往往 RUNNABLE），看它卡在哪个慢操作上。线程池饿死是第三种：任务在排队但无空闲线程，栈上全是 pool 线程在 WAITING。
+- **工程实践**：抓栈要「连续抓多次」（间隔几秒），单次快照会漏掉瞬时状态；线程名规范（业务线程起名）让栈一眼可读；容器里 `kill -3` 触发栈输出到 stdout 配合日志留存；锁竞争治理方向：缩小锁粒度、无锁化（CAS / 并发容器）、异步化。加分：说「大量 BLOCKED + CPU 不高」更像锁问题，「大量 RUNNABLE + CPU 高」更像计算热点。
+
+### Q4：load average 很高但 CPU 空闲，可能是什么原因？
+**答**：
+- **标准结论**：load average（负载均值）统计「运行队列 + 不可中断睡眠（D 状态）」的线程数，不只是 CPU 忙的线程——CPU 空闲但 load 高，典型原因是大量 D 状态线程：磁盘 IO 等待（`iostat` %util 高 + await 高）、网络 IO 阻塞、NFS / 锁等待。
+- **底层原理**：Linux 的 load 计算把 TASK_UNINTERRUPTIBLE（D 状态，不可被信号打断、等 IO 完成）也计入——设计动机是「这些线程虽然没占 CPU，但系统同样不可用」，所以 load 是「系统整体繁忙度」而非「CPU 利用率」。CPU 忙时 load 高是健康信号，IO 卡住时 load 高是故障信号——用 `vmstat` 的 r（运行队列）/ b（阻塞队列）列区分：r 高 = CPU 问题，b 高 = IO 问题。
+- **工程实践**：第一反应 `vmstat 1` 看 r / b 与 wa、`iostat -x 1` 看磁盘 %util / await；D 状态进程可查 `/proc/<pid>/stack` 或 wchan 确认等什么；容器场景叠加 cgroup 视角（容器内看到的 load 是宿主机的，别被误导）。加分：说「load 是趋势指标，单点值没意义，看 1 / 5 / 15 分钟的斜率」。
+
+### Q5：Java 服务连接池耗尽（HikariCP）怎么排查？
+**答**：
+- **标准结论**：现象是日志刷 `HikariPool-1 - Connection is not available, request timed out`——请求全在等连接。排查路径：先看连接池指标（active 是否顶满 maximumPoolSize、pending 排多长）→ 慢 SQL 拖住连接不归还 → 代码层连接 / 事务泄漏（未关闭、长事务）→ 数据库侧连接数上限。
+- **底层原理**：连接池是「有限的珍贵资源」——每个连接背后是 DB 进程的一个会话（内存 / CPU 开销），池的意义是把「建连成本」摊销成「复用」。池耗尽 = 租出速度 > 归还速度，两类原因：单条连接占用太久（慢 SQL、长事务、锁等待），或占用后不归还（泄漏——try 里拿连接、finally 外忘关，事务注解圈住外部调用）。HikariCP 的 active 与 pending 两个指标就能区分「都被占着」还是「有人排队」。
+- **工程实践**：开 HikariCP metrics 进 Grafana，把 active / pending 与慢 SQL 日志对照；慢 SQL 用 explain 分析、加索引、改批量；事务圈尽量小（读操作不开事务、事务里别调远程）；连接泄漏用 HikariCP 的 leakDetectionThreshold 抓现场；DB 侧 `max_connections` 也要对账（池总大小 × 实例数 ≤ DB 上限）。加分：说「连接池不是越大越好」——大池 × 多实例可能打爆数据库，池大小按 DB 容量规划。

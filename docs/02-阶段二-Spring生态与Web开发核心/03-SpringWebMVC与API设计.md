@@ -124,6 +124,8 @@ public record CreateOrderCmd(
         String phone
 ) {}
 // Controller 入参加 @Valid 即触发校验；失败自动 422/400, 不进业务代码（对照 NestJS 的 Pipe + class-validator）
+// 为什么校验放 DTO 而不是 Service：无效请求在入口 fail-fast——校验放 Service 意味着每个方法都要重复防御，
+// 放 DTO 是「一处声明、全员生效」；也保证脏数据进不了业务层（失败 422/400 即可，不需要走业务错误码）
 ```
 
 #### 1.3 全局异常：@RestControllerAdvice
@@ -150,6 +152,8 @@ public class GlobalExceptionHandler {
     }
 }
 ```
+
+> 底层机制：`@RestControllerAdvice` 是 Spring MVC `HandlerExceptionResolver` 异常解析体系的便捷封装——异常从 Controller 抛出后由 `DispatcherServlet` 统一分发，按「异常类型 → 对应 `@ExceptionHandler` 方法」匹配；没匹配到任何处理器才落到容器默认行为（返回 500 错误页）。所以「漏配 = 异常裸奔」的本质是：这个异常没有任何解析器接得住。
 
 > Spring 6+ 另有 RFC 7807 标准的 `ProblemDetail` 可用；但国内企业实践多为自定义统一响应体（下节），二选一、全公司统一即可。
 
@@ -186,10 +190,15 @@ public enum BizCode {
 
 > 响应示例：`{"code": 50002, "message": "库存不足", "data": null, "traceId": "a3f8c2e1"}`——`traceId` 联动上一讲的 MDC，前端报障时带上它，日志一查一个准。
 
+> **为什么业务失败也回 HTTP 200（业务码在 body 里）**：HTTP 状态码语义有限（成功 / 客户端错 / 服务端错），表达不了「库存不足」这类业务拒绝；而且 4xx/5xx 会触发浏览器、网关、代理的缓存与重试等干预行为，业务错误没必要惊动它们。所以国内团队普遍「HTTP 管传输层对错、code 管业务层对错」双轨制；对外部第三方开放 API 时则更倾向纯 HTTP 状态码 + RFC 7807，二选一全公司统一即可。
+
 #### 2.2 版本化策略
 
 - **URL 路径版本**（`/api/v1/orders`，推荐中小团队）：直观、网关路由友好、curl 可复现；代价是 URL 里「版本」不符合纯 REST 纯洁癖——工程上不纠结这个。
 - Header 版本（`Accept: application/vnd.demo.v2+json`）：无 URL 污染但调试麻烦。
+
+> ⏸️ **短期可以不学**：Header 版本化（`Accept: application/vnd.*+json`）国内团队极少采用——调试要配 Header、网关路由不友好，投入产出比低。**何时回来学**：做开放平台 / 对外 SDK，接口被第三方程序化调用、需要严格版本契约时。**面试最低要求**：能说出两种版本化方案及优缺点，选型结论「默认 URL 路径版本」即可。
+
 - 原则：**破坏性变更必须升版本**（v1 继续跑），非破坏性（加可选字段）不升。
 
 #### 2.3 幂等设计（重试安全的基础）
@@ -220,6 +229,8 @@ public class IdempotentOrderService {
 }
 ```
 
+> 为什么用 SETNX 而不是「先 GET 判断、再 SET」：后者是两步操作，两步之间并发请求可以插队——两个请求都能通过检查，幂等就被绕过了。`SETNX`（不存在才写入）是一条原子命令，「检查 + 写入」一步完成，天然保证只有第一个请求能抢到执行权。
+
 ```sql
 -- 方案二：数据库唯一索引 —— 最后防线, 前面全被绕过它也能兜住
 -- 业务唯一键建唯一索引, 重复插入直接报 DuplicateKeyException → 捕获后转"重复提交"
@@ -241,7 +252,7 @@ public record PageResp<T>(List<T> items, long total, int page, int size, boolean
 public record CursorResp<T>(List<T> items, String cursor, String nextCursor, boolean hasMore) {}
 ```
 
-> 深翻页用游标（`WHERE id > :cursor ORDER BY id LIMIT 20`，索引范围内扫描）；后台用页码。别用页码做深翻页——第 10 万页的 `LIMIT 999980, 20` 是慢查询制造机（阶段三第 1 讲回收）。
+> 深翻页用游标（`WHERE id > :cursor ORDER BY id LIMIT 20`，索引范围内扫描）；后台用页码。别用页码做深翻页——第 10 万页的 `LIMIT 999980, 20` 是慢查询制造机：MySQL 得先扫出前 999980 行再丢弃，offset 越大扫描量越大、越慢（阶段三第 1 讲回收）。
 
 ### 3. 接口文档：SpringDoc / OpenAPI
 
@@ -304,7 +315,7 @@ public class WebConfig implements WebMvcConfigurer {
 }
 ```
 
-> 预检（OPTIONS）：非简单请求（自定义 Header / JSON POST 跨域）会先发 OPTIONS 试探——排查「接口没进 Controller 却返回 403」时先想到它。
+> 预检（OPTIONS）：非简单请求（自定义 Header / JSON POST 跨域）会先发 OPTIONS 试探——浏览器要先确认服务器「允许跨域 + 允许哪些方法/头」，才敢发出真正会产生副作用的请求；排查「接口没进 Controller 却返回 403」时先想到它。
 
 ### 坑点提醒
 
@@ -326,3 +337,17 @@ public class WebConfig implements WebMvcConfigurer {
 1. 前端同时调 `POST /orders` 五次（网络重试），你的 token 幂等方案里 `setIfAbsent` 的过期时间取 3 秒 / 30 秒 / 10 分钟分别会出什么问题？
 2. 为什么「错误码分段」（4xxxx / 5xxxx / 9xxxx）对前端和 On-Call 都重要？如果只有 `code=1/2/3` 会丢掉什么信息？
 3. 用 NestJS 的思路口述一遍 Spring 这套「DTO 校验 → 全局异常 → 统一响应」链路，指出两个框架里各环节的对应物。
+
+## 常见面试题
+
+### Q1：Spring MVC 的全局异常处理是怎么实现的？`@RestControllerAdvice` 的底层机制是什么？
+**答**：标准答案：用 `@RestControllerAdvice` + `@ExceptionHandler` 声明「异常类型 → 响应结构」的映射，业务代码只管抛异常，转 HTTP 响应统一收口在这一处。原理层：Spring MVC 的 `DispatcherServlet` 对每个请求的异常有**异常解析链（HandlerExceptionResolver）**——`@ExceptionHandler` 方法会被注册成 `ExceptionHandlerExceptionResolver`，它按「异常类型 → 处理器方法」做匹配（子类能命中父类的处理器）；整条链都没接住，异常才落到容器默认行为（500 错误页 / Tomcat 错误页）。`@RestControllerAdvice` 只是让这些处理器方法免于逐个注册的便捷载体。工程层：至少处理三类异常——业务异常（`BizException`，转业务错误码）、参数校验异常（`MethodArgumentNotValidException`，收集全部字段错误一次返回）、兜底的 `Exception`（记全日志 + 脱敏提示，别把堆栈原样返回给前端）；日志里打全量堆栈，响应里只给「人话」。
+
+### Q2：接口幂等怎么做？「先查后写」为什么不行？
+**答**：标准答案三板斧：**防重 token**（客户端先领 token，提交时带上，服务端用 Redis `SETNX` 原子消费——抢到执行权的请求才放行）、**数据库唯一索引**（业务唯一键建唯一索引，重复插入报 `DuplicateKeyException` 后转「重复提交」，是最后防线）、**状态机**（`WHERE status='CREATED'` 条件更新，天然拒绝第二次迁移）。原理层：幂等的本质是「并发下的原子检查-执行」——「先查再写」是两步，两步之间并发请求可插队，两个请求都能通过检查；`SETNX` 是一条原子命令，把「检查 + 写入」压成一步，才保证只有一个请求生效。工程层：生产组合是「入口 token 拦一道 + 唯一索引兜底」，状态机用于业务流转本身；注意 token 过期时间别设太短（用户 5 分钟重试是合理行为）也别太长（死 token 堆积）；业务失败要还 token，允许重试。
+
+### Q3：深分页为什么慢？怎么优化？
+**答**：标准答案：`LIMIT 999980, 20` 这类深 offset 翻页，MySQL 要先从表头扫出前 999980 行再**丢弃**，offset 越大扫描量越大——第 10 万页的代价和第 1 页完全不同，这就是深分页慢的本质。方案：**游标分页**（`WHERE id > :cursor ORDER BY id LIMIT 20`）——只扫描游标之后的数据，走索引范围扫描，翻页深度与性能无关，适合 App 信息流 / 无限滚动；**覆盖索引 + 延迟关联**（先只查主键再回表）可缓解页码式；海量场景还有 ES 等搜索引擎。原理层：B+ 树的索引扫描是「定位起点后顺序读」，游标方案把起点定位从「从头数 N 行」变成「直接定位到某条记录」，复杂度从 O(offset) 降到 O(1)。工程层：后台管理这种「能跳页」的场景保留页码式但限制最大页数 / 最大 offset；面向用户的分页一律游标。
+
+### Q4：什么是 CORS 预检？排查跨域问题从哪几个点入手？
+**答**：标准答案：浏览器同源策略下，跨域**非简单请求**（自定义 Header、`application/json` 的 POST 等）会先发一个 `OPTIONS` 预检请求，问服务器「允不允许这个源 / 这些方法 / 这些头」，服务器回 `Access-Control-Allow-*` 头表示放行，浏览器才发真实请求；**简单请求**（表单 GET/POST 等）不发预检。原理层：预检是浏览器替你做的**安全闸门**——真实请求可能产生副作用（写库、下单），浏览器先试探服务器意愿，避免「请求已执行、浏览器才拦截响应」的尴尬；服务端没配 CORS 时，预检或真实请求会被浏览器直接拦下（Network 里能看到请求但 JS 拿不到响应）。工程层：排查按序看——①预检有没有 200（`OPTIONS` 被鉴权 Filter 拦了会 403，常见于「接口没进 Controller 却 403」）；②响应头 `Access-Control-Allow-Origin` 是否包含前端源（别用 `*` 加 `withCredentials` 组合）；③`Allow-Methods` / `Allow-Headers` 是否覆盖实际请求；④`maxAge` 缓存预检结果，减少 OPTIONS 往返。

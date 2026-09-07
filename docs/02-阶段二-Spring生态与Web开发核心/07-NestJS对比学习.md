@@ -11,12 +11,12 @@
 
 | NestJS | Spring | 一句话对比 |
 |-|-|-|
-| `@Module` | `@Configuration` + `@ComponentScan` | Spring 隐式扫描，NestJS 显式声明模块 |
-| `@Injectable()` | `@Service` / `@Component` | 都是「交给容器管理」 |
+| `@Module` | `@Configuration` + `@ComponentScan` | Spring 隐式组件扫描（Component Scan），NestJS 显式声明模块 |
+| `@Injectable()` | `@Service` / `@Component` | 都是「交给容器管理」（IoC 容器 + 依赖注入 Dependency Injection） |
 | `@Controller` | `@RestController` | 都是处理 HTTP 请求 |
 | `@UseGuards(Guard)` | 过滤器链 + `@PreAuthorize` | 鉴权是「链 + 方法级注解」组合 |
 | `Pipe`（如 ParseIntPipe） | Converter + Bean Validation | 参数转换 + 校验分两个机制 |
-| `Interceptor` | Spring AOP（切面） | AOP 在字节码代理层，覆盖更广 |
+| `Interceptor` | Spring AOP（Aspect-Oriented Programming，面向切面编程） | AOP 在字节码代理层，覆盖更广 |
 | ExceptionFilter | `@RestControllerAdvice` | 全局异常统一处理 |
 | 生命周期钩子 | Bean 生命周期回调 | `@PostConstruct` / `@PreDestroy` |
 | EventEmitter | ApplicationEvent | Spring 事件长在事务上 |
@@ -193,13 +193,17 @@ public class CostLogAspect {
 }
 ```
 
-> 能力差距的本质：NestJS Interceptor 活在「HTTP 请求边界」；Spring AOP 活在「方法调用边界」（字节码代理，阶段一第 3 讲）。`@Transactional` 只能由 AOP 提供，就是这个差距最好的例证。
+> 能力差距的本质：NestJS Interceptor 活在「HTTP 请求边界」；Spring AOP 活在「方法调用边界」（字节码代理，阶段一第 3 讲）——Bean 创建时被代理（Proxy）对象包装，任何方法调用都先经过切面逻辑，代理分 JDK 动态代理（基于接口）与 CGLIB（基于子类字节码增强）两种。`@Transactional` 只能由 AOP 提供，就是这个差距最好的例证。
+
+> ⏸️ **短期可以不学**：AOP 底层代理实现（JDK 动态代理 vs CGLIB 的差异、各自适用条件、代理失效的完整边界）不影响日常用注解写切面，现在深挖投入产出比低。**何时回来学**：遇到「`@Transactional` / `@PreAuthorize` 不生效」的同类自调用问题时。**面试最低要求**：能说清「AOP 靠代理拦截方法调用，同类自调用绕不开代理所以注解失效」即可。
 
 ### 3. 深层原因（比表格更值得记）
 
 - **隐式 vs 显式**：Spring 把「谁被注册」藏进组件扫描 / 自动装配；NestJS 的 Module 显式声明 imports / providers。调试装配问题时，Spring 查「扫描路径覆盖没有」，NestJS 查「Module 引了没有」。
 - **注解语义密度**：Spring 的派生注解多（@Service / @Repository / @Controller 对容器而言是同一个 @Component，但语义分层 + MVC 特殊处理）；NestJS 的 @Injectable 一词走天下——学习期记「哪个注解在哪些框架行为里有额外含义」即可（@Controller 被 MVC 扫描、@Configuration 的 CGLIB 增强等）。
 - **校验位置**：Pipe 在参数层拦截（动态、可编程）；Bean Validation 注解长在 DTO 字段上（静态、即契约）。
+
+> ⏸️ **短期可以不学**：Bean 生命周期的深度扩展点（Aware 接口族、BeanPostProcessor）是框架作者 / 中间件才需要实现的 SPI，业务代码几乎不碰。**何时回来学**：要自定义 Starter、写框架级组件时。**面试最低要求**：能说出生命周期大顺序（实例化 → 属性填充 → 初始化回调 → 使用 → 销毁）即可。
 
 ### 4. 使用方法
 
@@ -225,3 +229,37 @@ public class CostLogAspect {
 1. NestJS 用 `@Module({providers: [...]})` 显式列出 provider；如果 Spring 也这么设计，会多付出什么、少踩什么坑？（想想大型工程里「为什么这个 Bean 存在 / 不存在」的可追溯性）
 2. class-validator 的 `whitelist: true`（拒绝 DTO 外字段）防的是 mass assignment；Spring 侧用什么挡它（@RequestBody + record 默认忽略未知字段吗，还是要配）？
 3. 给一个纯 NestJS 同事做 15 分钟 Spring 入门分享：你会选哪三组概念对照当主线？其余的为什么不讲？
+
+## 常见面试题
+
+### Q1：NestJS 和 Spring 在设计哲学上最本质的差异是什么？
+
+**答**：最本质差异在「容器的深度」。两者都是 IoC + DI 思想，但 NestJS 的 DI 是「模块级显式声明」——`@Module` 里 imports / providers 一目了然；Spring 是「隐式组件扫描 + 自动装配」——同包及子包自动注册、`@Autowired` 按类型注入，所以 Spring 上手门槛更高，但大型工程里「新类写好注解即自动成为 Bean」的体验更顺。
+
+原理层：Spring 的容器是完整的 IoC 容器（BeanFactory / ApplicationContext），管理 Bean 全生命周期（实例化、依赖注入、初始化回调、销毁），衍生注解有额外语义（`@Repository` 触发持久化异常转译、`@Configuration` 被 CGLIB 代理）；NestJS 容器更轻，生命周期钩子（`onModuleInit` 等）对应 Spring 的 `@PostConstruct` 等回调。
+
+工程层差异：排查「Bean 没注入」，Spring 查扫描根路径（`@SpringBootApplication` 所在包就是扫描根），NestJS 查模块 imports——「先映射、再记差异、最后练手」的对比学习法就是为这种双心智准备的。
+
+### Q2：Spring AOP 为什么能实现 `@Transactional`，而 NestJS 的 Interceptor 做不到？
+
+**答**：因为两者的拦截边界不同。NestJS Interceptor 活在 HTTP 请求边界，只在路由处理器外围执行，拦不到 Service 层内部的任意方法调用；Spring AOP 活在方法调用边界——Bean 创建时被代理（JDK 动态代理或 CGLIB）包装，切点表达式可指向任意 Bean 的任意方法，`@Transactional` 本质就是在目标方法前后织入「开启 / 提交 / 回滚事务」的逻辑。
+
+原理层：AOP 的关键是代理对象拦截——调用方持有的是代理引用，方法调用先经切面（`@Around` / `@Before` / `@After`）再反射进真实方法。这就是为什么同类内 `this.method()` 自调用会让注解失效：`this` 是真实对象，不是代理。
+
+工程层：NestJS 里事务要靠手动 `DataSource.transaction` / QueryRunner 包装，Spring 一个注解搞定，这是重业务后端选 Java 的重要理由；但 AOP 不是万能——代理失效三查：非 public 方法、同类自调用、final 方法（CGLIB 靠子类重写实现，final 拦不住）。
+
+### Q3：Spring 的隐式组件扫描与 NestJS 的显式模块声明，各有什么优缺点？
+
+**答**：隐式扫描的优点在于「零配置接入」——新类写好注解自动进容器，适合快速迭代，Spring Boot 的约定优于配置把它推到极致；缺点是「可追溯性」差——大型工程里一个 Bean 为什么存在、被谁依赖，要靠 IDE / 工具反查，隐式依赖在重构时容易漏改。
+
+显式声明的优点正好相反：模块依赖关系写在 imports 里，谁提供谁消费一目了然，缺失的 provider 在启动 / 编译期就报错（失败得快）；缺点是样板代码多，每个新 provider 都要记得注册。
+
+工程层结论：两条路殊途同归。Spring 官方用 `@Configuration` 显式收口复杂装配、`@Import` 精确引入、ArchUnit 做架构测试来补隐式的短板；NestJS 在大型项目里模块爆炸时同样需要分层治理。选型看团队规模与可追溯性要求，显式与隐式是权衡，不是优劣。
+
+### Q4：从 NestJS 迁移到 Spring，最容易踩的三个坑是什么？
+
+**答**：①鉴权位置——NestJS 的 Guard 是单一概念，Spring 把能力拆成过滤器链 / 拦截器 / `@PreAuthorize` 三层：横切所有请求放过滤器链，MVC 层专属放拦截器，按方法 / 角色粒度放 `@PreAuthorize`，硬搬会写出「放哪层都别扭」的代码。
+
+②校验与转换位置——NestJS 的 Pipe 在参数层动态处理；Spring 的类型转换（Converter）与校验（Bean Validation 注解长在 DTO 字段上）是两个机制，且校验是静态契约，规则跟着字段走、跨层可复用（Service 层 `@Validated` 也能触发）。
+
+③「事件」心智与代理失效——NestJS 的 EventEmitter 是纯发布订阅，Spring 事件默认同步、`@TransactionalEventListener` 让事件跟随事务提交时机（回滚则事件不发）；再加上 `@Transactional` / `@PreAuthorize` 在同类自调用时静默失效——这两个「看不见的坑」是 NestJS 心智里完全没有的概念，出问题时先按代理三查（非 public / 自调用 / final）排查。

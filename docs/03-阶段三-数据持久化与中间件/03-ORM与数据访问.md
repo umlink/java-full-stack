@@ -17,7 +17,7 @@
 | jOOQ | 类型安全的 SQL DSL | 编译期检查 SQL 对错 |
 | Entity | 映射到数据库表的 Java 类 | `@Table` 标注的类 |
 | Repository | 数据访问接口 | `findById` 等方法 |
-| N+1 问题 | 查 1 次列表 + 每行又查一次关联 | JPA 经典坑 |
+| N+1 问题（N+1 Query Problem） | 查 1 次列表 + 每行又查一次关联 | JPA 经典坑 |
 | Mapper | MyBatis 的数据访问接口 | 无实现类也能跑 |
 
 ### 本讲在解决什么问题
@@ -49,7 +49,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
 ```
 
 > 代码备注（逐行解释）：
-> - MyBatis-Plus 的 `userMapper`：Mapped 接口**不用写实现类**——由动态代理（阶段一第 3 讲）生成，这就是「Mapper 能跑」的原因。
+> - MyBatis-Plus 的 `userMapper`：Mapped 接口**不用写实现类**——由 JDK 动态代理（Dynamic Proxy，阶段一第 3 讲）在运行时生成实现，这就是「Mapper 能跑」的原因。
 > - `new LambdaQueryWrapper<User>().eq(...)`：用条件构造器拼查询条件，比手写 SQL 安全又不失控制。
 > - JPA 的 `findByStatus(int)`：**方法名即查询**（Spring Data 按命名规则自动生成 SQL）——这是 JPA 最省事的地方。
 > - 二者差异：MyBatis-Plus 显式、SQL 掌控强；JPA 隐式、靠命名规范，省心但底层不透明。
@@ -232,12 +232,12 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 |-|-|-|-|
 | 刚 new 出来，未关联上下文 | 受管：脏检查自动同步 DB | 上下文关闭后脱管 | 标记删除，flush 时发 DELETE |
 
-- **一级缓存**：同一持久化上下文里同 ID 只有一个受管实例——事务内重复 `findById` 不打第二条 SQL。
+- **一级缓存**（**First-Level Cache**，本质就是持久化上下文本身）：同一持久化上下文里同 ID 只有一个受管实例——事务内重复 `findById` 不打第二条 SQL，脏检查（Dirty Checking）才能把修改统一写回。Hibernate 默认只开一级缓存，二级缓存（Second-Level Cache）默认关闭。
 
 #### 3.2 N+1 问题：JPA 的头号坑
 
 ```java
-// 场景: 查 100 个用户, 再逐个取他们的订单(关联是 LAZY 懒加载)
+// 场景: 查 100 个用户, 再逐个取他们的订单(关联是 LAZY 懒加载 Lazy Loading)
 List<User> users = userRepository.findAll();      // ① 1 条 SQL: SELECT * FROM user
 for (User u : users) {
     u.getOrders().size();                          // ② 每个用户首次访问订单 → 再发 1 条 SQL!
@@ -245,6 +245,8 @@ for (User u : users) {
 // 结果: 1 + 100 = 101 条 SQL —— 就是 N+1 问题
 // (TypeORM/Prisma 一样有, 前端同学 migration 时最容易带进来的坑)
 ```
+
+- **根因**：关联默认 **LAZY（懒加载，Lazy Loading）**——查主表时不带关联，等代码逐个访问 `u.getOrders()` 才逐条发 SQL。ORM 越「省心」、SQL 越不可见，N+1 越容易被悄悄带进来。
 
 ```java
 // 解法一: @EntityGraph —— 一条 JOIN SQL 把关联一起取出来(前端类比: include/with 预加载)
@@ -282,6 +284,8 @@ Result<Record> rows = dsl
 ```
 
 - 心智迁移：与 Prisma 的「schema 生成客户端」同宗——**契约由数据库结构出发，编译期守护**。适合喜欢类型安全的你；国内存量少，了解 + 试用即可。
+
+> ⏸️ **短期可以不学**：jOOQ 在国内企业存量少、招人难，主线了解「类型安全 SQL」的定位即可，不用上手写业务。**何时回来学**：团队引入类型安全 SQL，或你主导复杂报表查询选型时。**面试最低要求**：一句话说出 jOOQ 解决什么问题（SQL 编译期类型校验）及它在光谱上的位置。
 
 ### 5. 多数据源与读写分离落地
 
@@ -334,3 +338,25 @@ public class ReadOnlyAspect {
 1. 同样是「对象 ↔ 表」映射，为什么国内选 MyBatis 而欧美更多 JPA？（提示：DBA 文化 / SQL 审核流程 / 复杂报表场景的差异）
 2. `@TableLogic` 逻辑删除后，「订单号唯一」的语义怎么保证？给出至少两种方案并说明取舍。
 3. 如果项目 80% 是简单 CRUD、20% 是复杂报表，你会怎么组合这两讲里的工具？（提示：MP 走日常 + jOOQ/原生 SQL 走报表）
+
+## 常见面试题
+
+### Q1：MyBatis 里 `#{}` 和 `${}` 有什么区别？怎么防 SQL 注入？
+
+**答**：标准结论：`#{}` 是预编译参数占位符，生成 PreparedStatement 的 `?`，值不参与 SQL 语法解析，天然免疫注入；`${}` 是字符串原样拼接进 SQL，用户输入可能变成 SQL 的一部分，有注入风险。底层原理：预编译让 SQL 骨架先编译一次，参数通过绑定传递，数据库不会把参数内容当 SQL 解析；`${}` 拼接后整个字符串重新解析，`' or '1'='1` 这类输入就变成查询条件的一部分。工程实践：能选 `#{}` 永远选 `#{}`；`${}` 只准用于排序字段名、表名这类白名单值，且必须用枚举映射校验；MyBatis-Plus 的 `last()` 等价 `${}` 纪律，只拼无注入风险的常量。常见误区：以为过滤引号就安全——注入绕过方式很多（编码、注释符），预编译才是唯一正解；也别把所有动态排序都禁掉，白名单映射是两全方案。
+
+### Q2：什么是 N+1 问题？怎么解决？
+
+**答**：标准结论：查 1 条主表 SQL + N 条关联 SQL（1 + N = 101 条）。JPA 关联默认懒加载，遍历集合逐个访问关联属性时逐条发 SQL。解法：`@EntityGraph` / JOIN FETCH 预加载、DTO 投影、`@BatchSize` 批量抓取。底层原理：懒加载是「用到才查」，本身没错——问题在循环里每个实体都触发一次查询，把网络往返放大 N 倍；`@EntityGraph` 把 N 条查询改写为一条 LEFT JOIN 一次取齐，DTO 投影则根本不加载实体、只查需要的列。工程实践：列表类查询一律考虑预加载；保留懒加载但通过批量抓取控住条数；排查靠日志里数 SQL 条数。常见误区：以为 N+1 只发生在 JPA——MyBatis 手写 SQL 循环查、TypeORM / Prisma 的 relation 加载一样会有；「先取列表再循环」的代码模式在哪都可能踩。
+
+### Q3：为什么国内用 MyBatis-Plus 而不用 JPA？
+
+**答**：标准结论：MyBatis 的 SQL 完全可控、易审查，契合国内「DBA 审核 SQL」的文化；JPA 是领域建模和快速开发的标准，但 SQL 生成黑盒、复杂查询受 JPQL 语法限制、优化空间小。底层原理：国内团队普遍有专职 DBA 和 SQL 评审流程，要求 SQL 显式可见、能交给 DBA 改写优化；MyBatis 把 SQL 写在 XML / 注解里天然满足。JPA 的实体生命周期、懒加载、一级缓存等概念对团队约束要求高，用不好容易出 N+1、长事务、意外加载等隐性问题。工程实践：纯 CRUD 密集 + 领域模型复杂选 JPA 开发效率高；团队 SQL 文化强、复杂报表多选 MyBatis-Plus（BaseMapper + LambdaQueryWrapper 已把单表 CRUD 解放，不需要手写）。常见误区：以为 MyBatis 只能手写 SQL——MyBatis-Plus 的单表 CRUD、分页、逻辑删除都是开箱即用；也别一个项目混两套 ORM，事务、缓存、审计各管各的排障成本翻倍。
+
+### Q4：LazyInitializationException 是什么？怎么避免？
+
+**答**：标准结论：JPA 的懒加载关联在事务 / 会话关闭之后被访问，Hibernate 抛出的运行时异常——「session 已经没了，还去查数据」。底层原理：懒加载的关联只有在持久化上下文（Session / EntityManager）存活时才能触发查询；事务提交后上下文关闭，实体进入 detached（脱管）状态，再访问未加载的关联属性，Hibernate 找不到 session 执行 SQL。工程实践：Controller 层不要碰实体的关联属性——要么在 Service 事务内用 `@EntityGraph` 预加载，要么用 DTO 投影返回；把 `open-in-view: true` 当解药是错的，它只是把事务生命周期延长到视图渲染，连接被占满、高并发直接打爆连接池。常见误区：以为加了 `fetch = EAGER` 就一劳永逸——急加载会让不需要关联的查询也带 JOIN，SQL 膨胀；正确做法是按查询场景决定加载策略。
+
+### Q5：逻辑删除 + 唯一索引会踩什么坑？怎么解？
+
+**答**：标准结论：逻辑删除（DELETE 变 UPDATE deleted=1）后，被删数据仍占着唯一索引的位置——删了再建同 order_no 直接唯一键冲突。底层原理：唯一索引约束的是「当前存在的数据行」，逻辑删除不删行，唯一值就一直在；要让「已删数据」不占坑，必须让唯一键随删除变化。工程实践：两种方案——唯一索引包含 deleted 列（deleted 默认 0、删除时写时间戳，每次删除值不同，历史删除互不冲突）；或对「可重建」的业务键把删除时间戳拼进唯一键。常见误区：以为唯一索引加 deleted 列就万事大吉——deleted 只有 0/1 时，删两条同 order_no 的数据照样冲突，要用「时间戳」当 deleted 值才能让每次删除唯一。

@@ -78,7 +78,7 @@ public class StreamDemo {
 
 ### 1. Lambda 与函数式接口
 
-**函数式接口**：只有一个抽象方法的接口——Lambda 就是它的实例化语法。Java 不像 JS 有「一等公民函数」，函数必须挂在一个接口类型上才能传递（这是与 JS 箭头函数最核心的差异）。
+**函数式接口（Functional Interface）**：只有一个抽象方法的接口——Lambda 就是它的实例化语法。Java 不像 JS 有「一等公民函数」，函数必须挂在一个接口类型上才能传递（这是与 JS 箭头函数最核心的差异）。**为什么必须「只有一个」抽象方法**：Lambda 没有方法名和签名，编译器只能靠「目标类型」推断它实现的是哪个方法——抽象方法唯一，推断才不会产生歧义；`default` / `static` 方法自带实现体，不影响推断。
 
 ```java
 // @FunctionalInterface 只是编译期检查注解：确保接口只有一个抽象方法
@@ -127,7 +127,7 @@ printer.accept("只消费，不返回");                // 输出: 只消费，�
 
 > **为什么必须背签名**：后面 Stream 的 `map(Function)` / `filter(Predicate)` / `forEach(Consumer)`、Optional 的 `orElseGet(Supplier)` 全用这套词汇表。不背它，读 Stream 代码就是看天书。
 
-### 2. Stream：惰性求值与短路操作
+### 2. Stream：惰性求值（Lazy Evaluation）与短路操作（Short-circuiting）
 
 **Stream**：数据流水线的声明式描述——先「描述要做什么」，终端操作触发时才真正执行。
 
@@ -162,11 +162,13 @@ System.out.println(result);
 // 输出: [ALICE, BOB, CHARLIE, DAVE]（Bob/Dave 各 4 个字符 > 3，都被保留）
 ```
 
+> **为什么中间操作是惰性的**：Stream 是「拉取式」（pull-based）流水线——元素不是每个操作各扫一遍，而是**逐个流过整条链**（filter 放行 → map 转换 → collect 收集），直到终端操作才开始「拉」第一个元素。惰性给 JVM 两个优化空间：① 短路操作可以「拉够就停」；② 整条链的遍历次数合并到接近一次。
+
 > **与 JS 的关键差异**：`Array.prototype.filter/map` 是**立即执行**的（每个方法遍历一遍数组）；Java Stream 是**先声明后触发**，且元素是「逐个流过全流水线」的（垂直执行），不是每个操作各扫一遍——JDK 实现通常把整条流水线优化为尽量少的遍历（多数场景确实一次），但这不是规范保证，经过 `flatMap` 等复杂操作时可能引入额外处理。
 
 #### 2.2 短路操作
 
-`limit` / `takeWhile` / `findFirst` / `anyMatch` 可以提前终止流水线，不遍历全量元素——处理无限流或大集合时的性能武器。
+`limit` / `takeWhile` / `findFirst` / `anyMatch` 可以提前终止流水线，不遍历全量元素——处理无限流或大集合时的性能武器。**为什么能提前终止**：拉取式流水线里，终端操作是「按需索取」——`limit(5)` 索要到第 5 个就收手，上游不必被迫生成第 6 个元素；这正是无限流（`Stream.iterate`）能配合 `limit` 安全运行的原因。
 
 ```java
 import java.util.stream.Stream;
@@ -187,7 +189,7 @@ System.out.println(hasLongName);    // 输出: true（只检查到 Charlie 就�
 
 > 业务场景一句话：当日 10 万条风控日志按时间序流式处理，`riskLogs.stream().filter(Log::isAlert).limit(5)` 取最早 5 条告警——短路让后面的元素根本不扫，这是 `limit` 在企业代码里的主战场。
 
-> 并行流（`parallelStream`）留给第 7 讲并发编程评估——「方便」不等于「适合」，它有真实的线程安全陷阱。
+> ⏸️ **短期可以不学**：并行流（`parallelStream`）的线程安全陷阱先留给第 7 讲并发编程——绝大多数业务代码用默认串行流就够了，「方便」不等于「适合」，它会把公共 ForkJoinPool、共享变量竞态、结果顺序不确定性一起带进来。**何时回来学**：需要压榨多核吞吐、或面试被问「并行流什么时候该用」时。**面试最低要求**：能说清「并行流默认用公共 ForkJoinPool、共享变量有竞态、结果顺序不保证」即可。
 
 ### 3. Optional：用类型系统表达「可能没有值」
 
@@ -258,7 +260,7 @@ Instant ts = Instant.now();
 
 ### 5. 方法引用
 
-**方法引用**：Lambda 体只调用一个已有方法时的语法糖——`x -> foo(x)` 可以直接写成 `Foo::foo`，让流水线读起来像一句话。
+**方法引用（Method Reference）**：Lambda 体只调用一个已有方法时的语法糖——`x -> foo(x)` 可以直接写成 `Foo::foo`，让流水线读起来像一句话。
 
 ```java
 import java.util.List;
@@ -305,3 +307,17 @@ System.out.println(lengths1);                    // 输出: [5, 3, 7]
 1. `list.stream().filter(...)` 之后没有任何终端操作就结束了，JVM 会报错吗？调试时怎么快速发现这种「白写流水线」的代码？
 2. JS 的 `[1,2,3].map(f).filter(g)` 和 Java 的 `stream.map(f).filter(g).collect(toList())`，在「数组被遍历几遍」上有什么本质区别？
 3. 为什么 `SimpleDateFormat` 并发不安全而 `DateTimeFormatter` 安全？从「可变状态」角度解释。
+
+## 常见面试题
+
+### Q1：Stream 的中间操作和终端操作有什么区别？为什么中间操作是惰性的？
+**答**：中间操作（filter/map/sorted 等）只描述「要做什么」，不执行任何计算；终端操作（collect/forEach/count 等）触发整条流水线真正执行。原因在于 Stream 是拉取式（pull-based）设计：中间操作只是往流水线上「挂」一个处理节点，元素在终端操作触发后逐个流过整条链，所以中间操作天然惰性。这个设计带来两个收益：一是短路操作（limit/findFirst/anyMatch）可以拉够就停，不必处理全量数据，配合无限流也安全；二是多个中间操作可以合并为尽量少的遍历，避免 JS 数组链式方法每调一次就扫一遍的开销。工程上要警惕「只挂节点不触发」的白写流水线——没有终端操作，整条链一行都不会跑，且编译器不报错，只能靠代码审查与习惯发现。
+
+### Q2：`orElse` 和 `orElseGet` 有什么区别？实际中怎么选？
+**答**：区别在求值时机。`orElse(value)` 的参数是**先求值**再传入——即使 Optional 有值，`expensive()` 也一定会执行；`orElseGet(supplier)` 是惰性的，只有 Optional 为空时才会调用 Supplier。选型原则：兜底逻辑有成本（查库、构造大对象、打日志）就必须用 `orElseGet`，否则每次调用都在白白浪费；兜底是常量、字面量时两者等价，用 `orElse` 读起来更直观。延伸考点：Optional 的使用边界——只适合做方法返回值（签名即文档），不适合做字段和参数（增加序列化与内存成本、把防御责任推给调用方）；`Optional.get()` 空时抛 `NoSuchElementException` 且无上下文，应改用 `orElseThrow` 抛带业务语义的异常。
+
+### Q3：Lambda 表达式和匿名内部类有什么区别？为什么 Lambda 捕获的外部变量必须是 effectively final？
+**答**：语法上 Lambda 更简洁，但本质差异有三：① Lambda 是「函数式接口的实例化」，编译期走 `invokedynamic`，不强制生成单独的 .class 文件；匿名内部类会生成类文件、引入额外类型。② Lambda 里 `this` 指向**外层类**，匿名内部类的 `this` 指向内部类自身。③ 捕获语义：Lambda 要求捕获的局部变量是 effectively final——因为 Java 的捕获是**按值捕获**（变量被复制进 Lambda 的上下文），若变量还能被重新赋值，捕获的副本与外部变量就会不一致；设计上禁止重新赋值，语义才清晰。工程注意：捕获可变对象（如 List）只是引用不可变，对象内容仍可改，这不算 effectively final 的豁免。
+
+### Q4：parallelStream 有什么坑？什么时候该用并行流？
+**答**：并行流默认使用**公共的 ForkJoinPool**（线程数 = CPU 核数 - 1），主要有四个坑：① 共享变量竞态——流里的操作若写外部可变状态（如 `forEach` 里往集合 add），结果不确定；② 公共池被阻塞任务占满，会拖垮全应用的并行任务；③ 结果顺序不保证——并行收集不做顺序控制时，`collect(toList())` 的元素顺序可能不符合预期；④ 数据量小时并行反而更慢（任务切分、线程切换的开销超过收益）。正确用法：**数据量大 + 无共享可变状态 + CPU 密集（或每个元素处理耗时长）**。业务开发的经验是默认串行，性能压测证明并行收益后再换；自定义线程池与公共池混用要谨慎，避免互相阻塞。

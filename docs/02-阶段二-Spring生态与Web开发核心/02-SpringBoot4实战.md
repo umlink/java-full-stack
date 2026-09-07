@@ -15,7 +15,7 @@
 | Spring Boot | 让 Spring 项目「开箱即用」的框架 | 引依赖 + 写几个类就能出接口 |
 | starter | 一个依赖包，引进来就自带一堆能力 | `spring-boot-starter-web` |
 | @SpringBootApplication | 项目入口：自动配置+组件扫描+配置类 | 主类上标注 |
-| 自动装配 | Spring 看你要什么，自动建好 Bean | 引了 web 就有 Tomcat + 一堆自动配置 |
+| 自动装配（Auto-Configuration） | Spring 看你要什么，自动建好 Bean | 引了 web 就有 Tomcat + 一堆自动配置 |
 | application.yml | 项目配置文件 | 端口/数据库/日志写这里 |
 | @ConfigurationProperties | 把配置映射成强类型 Bean | 配置文件 → Java 类 |
 | Actuator | Boot 自带的监控端点 | `/actuator/health` |
@@ -134,6 +134,7 @@ public class DataSourceAutoConfiguration {
 ```
 
 - 装配清单登记文件：`META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`（Boot 2.7 前是 `spring.factories`——旧资料常见，注意区分）。
+- **为什么必须靠条件注解**：自动配置类对所有应用「一视同仁」加载，但每个应用引入的依赖千差万别——条件注解就是「这个环境需要我吗」的开关，让同一份自动配置在不同项目里各取所需，这正是「引依赖即生效」的约定式体验的来源。反过来，排查「自动配置为什么没生效」也从它入手。
 - 排查工具：启动参数 `--debug` 会打印**条件评估报告**（哪个配置为什么没生效，`CONDITIONS EVALUATION REPORT`）。
 
 #### 1.3 写一个自定义 starter（步骤）
@@ -158,6 +159,8 @@ public class WarnAutoConfiguration {
     }
 }
 ```
+
+> ⏸️ **短期可以不学**：动手写自定义 starter 是中间件 / 基建团队的活，业务开发「会读」就够——面试考的是它背后的机制（自动装配 + 条件注解），不是你会不会写。**何时回来学**：公司要沉淀跨项目复用能力（埋点、认证、限流等打包成组件）时。**面试最低要求**：能说出 starter = 依赖 + 自动配置类 + `AutoConfiguration.imports` 登记文件，三步即可。
 
 ### 2. 配置体系
 
@@ -207,7 +210,7 @@ public record PriceProperties(
 // @Validated + @NotBlank String apiKey 即可
 ```
 
-> **外部化配置优先级**（高 → 低）：命令行参数 → 环境变量 → profile 段 → `application.yml`。生产纪律：**密码 / Key 走环境变量，不落文件**；同一份镜像靠环境变量区分环境（阶段五 CI/CD「一次构建处处部署」的基础）。
+> **外部化配置优先级**（高 → 低）：命令行参数 → 环境变量 → profile 段 → `application.yml`。**为什么命令行最高、环境变量高于文件**：越「运行时」的覆盖手段越不依赖代码库——`application.yml` 要进 git，环境变量来自部署平台（K8s / CI），命令行参数是运维现场最后的兜底开关；生产纪律：**密码 / Key 走环境变量，不落文件**；同一份镜像靠环境变量区分环境（阶段五 CI/CD「一次构建处处部署」的基础）。
 
 ### 3. 内置容器与三层拦截
 
@@ -239,7 +242,7 @@ public class AuthInterceptor implements HandlerInterceptor {  // Interceptor：S
 }
 ```
 
-> **执行顺序**：`Filter(doFilter 前) → Interceptor(preHandle) → AOP(方法切面) → Controller → AOP → Interceptor(postHandle/afterCompletion) → Filter(后)`。
+> **执行顺序**：`Filter(doFilter 前) → Interceptor(preHandle) → AOP(方法切面) → Controller → AOP → Interceptor(postHandle/afterCompletion) → Filter(后)`。**为什么 Filter 在最外**：Filter 是 Servlet 容器规范，先于 Spring MVC 存在——请求进容器先走 Filter 链，才到 Spring 的 `DispatcherServlet`；Interceptor 是 MVC 内部的扩展点，所以它能拿到即将执行的 handler 方法，Filter 拿不到。
 > 注意：静态资源、错误分发（ERROR dispatch）等非 Controller 请求可能不经过完整链路，排查问题时先确认请求类型。
 > 选型口诀：**跨技术栈的进 Filter（如 TraceID / CORS），跟路由方法绑定的进 Interceptor（如权限），跟 Bean 方法绑定的用 AOP（如审计日志）**。容器可换 Jetty / Undertow：排除 `spring-boot-starter-tomcat` 引入替代 starter 即可。
 
@@ -268,6 +271,8 @@ curl localhost:8080/actuator/metrics/http.server.requests
 
 自定义 Endpoint：`@Endpoint(id = "warmup")` + `@ReadOperation` 方法。
 
+> ⏸️ **短期可以不学**：自定义 Actuator Endpoint 属于平台型需求（暴露内部状态 / 触发运维动作），业务开发极少写。**何时回来学**：做运维平台对接、需要暴露自定义监控指标时。**面试最低要求**：知道 Actuator 提供 `/health`、`/metrics`、`/prometheus` 即可，`@Endpoint` 听过即可。
+
 ### 5. AOT 与原生镜像
 
 | 方案 | 启动 | 代价 |
@@ -277,6 +282,8 @@ curl localhost:8080/actuator/metrics/http.server.requests
 | GraalVM Native Image | 毫秒级、内存减半 | 构建慢；**封闭世界**：反射 / 动态代理需显式配置 |
 
 > **Leyden AOT 定位**：前瞻技术，了解即可；当前真正可落地的是 GraalVM Native Image，且只在 Serverless / 弹性伸缩敏感场景值得。
+
+> ⏸️ **短期可以不学**：AOT 编译与 GraalVM Native Image 是部署优化技术，主线 9-10 个月里的绝大多数项目用不上，Leyden 还在演进，现在投入产出比极低。**何时回来学**：做 Serverless / 弹性伸缩敏感（冷启动致命）的服务，或公司要求镜像体积、启动时间达标时。**面试最低要求**：能说清 Native Image 的「封闭世界」假设（反射 / 动态代理需显式配置）与适用场景即可。
 
 选型判断：Serverless / 弹性伸缩敏感（冷启动致命）才上 Native Image；常规长驻服务 Leyden AOT 或不动。
 
@@ -335,3 +342,17 @@ public class TraceIdFilter extends OncePerRequestFilter {
 1. 引入 `spring-boot-starter-data-redis` 但没配 host，应用为什么能启动、什么时候才报错？这个行为和自动装配的哪个特性有关？
 2. 同一个配置在 yml、环境变量、命令行各写了一份，最终生效哪个？用这条规则解释「K8s 里改环境变量就能切配置」。
 3. 虚拟线程开启后，`synchronized` 里做阻塞 IO 的老代码会发生什么（联系阶段一第 7 讲 pinning）？
+
+## 常见面试题
+
+### Q1：Spring Boot 的自动装配原理是什么？
+**答**：标准答案：入口是 `@SpringBootApplication` 里的 `@EnableAutoConfiguration`，它通过 `@Import` 引入 `AutoConfigurationImportSelector`，扫描 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` 文件（Boot 2.7 前是 `spring.factories`），把登记的所有自动配置类**一次性加载进容器**。原理层：自动配置类不能盲目生效——每个类上都叠了一堆条件注解（`@ConditionalOnClass` / `@ConditionalOnMissingBean` / `@ConditionalOnProperty`），只有当 classpath 里有对应依赖、容器里没有用户自定义 Bean、配置开关打开时，才真正装配。这就是「引 starter 即有、用户自己配就尊让用户（约定让位于显式）」的机制。工程层：排查「Bean 没配出来」时，用 `--debug` 启动看**条件评估报告**（CONDITIONS EVALUATION REPORT），它逐条告诉你哪个条件没满足，而不是靠猜。
+
+### Q2：写一个自定义 starter 需要哪几步？常见的条件注解有哪些？
+**答**：标准答案三步：①写自动配置类（`@AutoConfiguration` + 条件注解 + `@Bean` 方法）；②写配置属性类（`@ConfigurationProperties` 绑 yml 前缀）；③在 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` 里登记自动配置类的全限定名，一行一个。原理层：starter 的本质是「依赖打包 + 自动配置登记」——用户引依赖 → 类出现在 classpath → `@ConditionalOnClass` 满足 → 装配发生，所以它没有任何运行时魔法，全是可推理的条件组合。常见条件注解要能数出：`@ConditionalOnClass`（有依赖才装）、`@ConditionalOnMissingBean`（用户没自定义才装，**尊重显式覆盖**）、`@ConditionalOnProperty`（配置开关）、`@ConditionalOnWebApplication`（Web 场景才装）。工程层：写自动配置时务必给 `@Bean` 加 `@ConditionalOnMissingBean`，否则用户想替换你的默认实现都无从下手。
+
+### Q3：Filter、Interceptor、AOP 的区别和执行顺序是什么？怎么选型？
+**答**：标准答案执行顺序：`Filter(doFilter) → Interceptor(preHandle) → AOP(方法切面) → Controller → AOP → Interceptor(afterCompletion) → Filter`。区别：Filter 是 **Servlet 容器规范**层，能拦住任何进入容器的请求（含静态资源），拿不到业务方法；Interceptor 是 **Spring MVC** 层扩展点，能拿到 handler（即将执行的方法），但只在 DispatcherServlet 分发的请求里生效；AOP 作用在 **Bean 方法**上，任何被容器管理的 Bean 方法都能切。原理层：三层分属不同抽象层，层层收窄——容器 → MVC → Bean。工程选型口诀：**跨技术栈的进 Filter**（TraceID、CORS——不依赖 Spring 的东西），**跟路由方法绑定的进 Interceptor**（权限、限流），**跟 Bean 方法绑定的用 AOP**（审计日志、事务）。别在 Filter 里做依赖 Spring 业务 Bean 的复杂逻辑，它执行时部分容器功能还没就绪。
+
+### Q4：`@ConfigurationProperties` 和 `@Value` 有什么区别？为什么推荐前者？
+**答**：标准答案：`@Value` 读单个配置值，写在字段上；`@ConfigurationProperties` 把一组前缀下的配置整体绑定成一个强类型 Bean。区别四点：①**类型安全**——前者拿到的是字符串，后者自动转 `Duration`、`List`、枚举等类型，编译期即校验；②**聚合性**——一组相关配置收敛到一个类里，还是散落各处；③**校验**——后者可配 `@Validated` + JSR-303 注解，配置缺失直接启动报错（fail-fast），前者只能等运行时 NPE；④**松散绑定**——前者要求 key 严格匹配字段名，后者支持 `remote-host` 自动映射 `remoteHost`。原理层：`@ConfigurationProperties` 的绑定发生在容器启动的 `ConfigurationPropertiesBindingPostProcessor` 阶段，所以启动期就能发现配置问题。工程层：一个前缀一个 record / class，作为团队的默认约定；`@Value` 只留给「确实只有一个孤立的配置」的场景，并且两者不要混用于同一组配置，避免「一半走类型绑定、一半走字符串」的割裂。

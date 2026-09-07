@@ -62,6 +62,8 @@ CREATE INDEX idx_goods_name ON goods (name);  -- MySQL 的索引是"列→行"
 | `ik_smart` | 智能切分 | 更精准，词更少 |
 > **该怎么做**：中文用 IK 分词，**索引端与搜索端保持一致**（最稳）——否则两端分词粒度不同，查询词切出来的 token 对不上索引里已有的 token，会「漏搜/误搜」。常见组合：① 索引 `ik_max_word` + 搜索 `ik_smart`（收录全、查询准，但需理解粒度差异）；② 两端统一用 `ik_max_word`（最不易踩坑）。`text` 字段做全文、`keyword` 字段做精确/排序。
 
+> ⏸️ **短期可以不学**：倒排索引的内核实现——term dictionary 的 FST 压缩、posting list 的 Roaring Bitmap、段合并（segment merge）细节。**何时回来学**：做 ES 内存/查询性能深度优化、或开始读 ES 源码时。**面试最低要求**：说出「倒排索引 = 词 → 文档列表，靠 term dictionary 定位词、posting list 存文档号」即可。
+
 ### 2. 索引与数据结构（mapping）
 ```json
 PUT /products
@@ -78,6 +80,10 @@ PUT /products
 ```
 > **该怎么做**：`text` 用于全文检索，`keyword` 用于精确过滤/排序/聚合——**一个字段可能需要双字段**（如 `name` 全文 + `name.keyword` 排序）。`search_analyzer` 单独指定搜索端分词器，若不写则默认等于 `analyzer`。
 > **不该怎么做**：把所有字段都设 `text`——精确匹配会变成全文匹配，排序也出问题。
+
+> **为什么 text 与 keyword 分开**：`text` 会先分词再建倒排索引，命中靠「词匹配」，无法精确等值与排序；`keyword` 不分词、整体存储，走列式 **doc_values**，支持精确过滤/排序/聚合——所以「一个字段双映射」（`name` 全文 + `name.keyword` 排序）是常见做法。
+
+> **为什么 ES 是近实时（NRT, Near Real-Time）**：写入先落内存 buffer + **translog（事务日志）**，此时**搜不到**；每秒一次的 **refresh** 把 buffer 生成一个可搜索的 segment，才「约 1 秒后可搜」；之后 **flush（commit）** 才把 segment 真正落盘并清空 translog。**为什么这么设计**：每秒批量生成 segment，避免「每条写入都随机写盘」（LSM 的批量合并思想）；translog 就是 WAL（Write-Ahead Log）——机器宕机时靠 translog 重放未落盘写入，防数据丢失。这就是「写入即达、约 1 秒才可见」的原因，也解释了为什么 ES 不能当 OLTP 主库。
 
 ## 进阶
 
@@ -107,6 +113,7 @@ GET /orders/_search
 }
 ```
 > **该怎么做**：报表/统计用 ES `aggs` 聚合（快），别拉全量到内存算。
+> **为什么 aggs 聚合快**：字段默认开启 **doc_values（列式存储）**——把每个字段按列连续存放（类比列存数据库），聚合/排序直接顺序扫一列，不用逐行读文档；所以 `text` 字段默认没有 doc_values（文本不可聚合），`keyword`/数值字段才能高效聚合排序。全量拉数据到内存是 O(数据量) 的序列化与传输开销，doc_values 是 O(结果集) 的列式扫描，量级天差地别。
 > **不该怎么做**：`size` 不加 `0`（默认返回 10 条命中，浪费）。
 
 ### 3. 数据同步（MySQL → ES）
@@ -160,6 +167,8 @@ GET /_cluster/health
 > **该怎么做**：分片数一次定够；副本 ≥1 保高可用；日志类配 ILM 冷热分层。
 > **不该怎么做**：主分片设太多（每个查询跨过多分片，聚合慢）；单节点无副本。
 
+> ⏸️ **短期可以不学**：分片路由与分配策略的内核细节——routing 哈希计算、shard allocation/rebalance 调度、节点故障后的分片恢复流程。**何时回来学**：集群出现分片分配不均/恢复慢、需要做容量与节点规划时。**面试最低要求**：能说出「文档按 _id 哈希路由到主分片、分片数一次定够、副本做高可用与读扩展」即可。
+
 ## 场景与红线（怎么做 / 不该怎么做）
 
 | 场景 | ✅ 该怎么做 | ❌ 不该怎么做 |
@@ -191,3 +200,25 @@ GET /_cluster/health
 - [ ] 能说清主分片/副本分片的作用，以及分片数为何一次定够
 - [ ] 能设计 MySQL→ES 的同步方案（MQ 异步 + 对账补偿）
 - [ ] 能说出「什么时候才该上 ES、什么时候 MySQL 够用」
+
+## 常见面试题
+
+### Q1：倒排索引的原理？和 MySQL 的 B+ 树索引本质区别是什么？
+
+**答**：标准结论：倒排索引（Inverted Index）是「词 → 文档列表」的反向映射，B+ 树是「值 → 行位置」的正向有序结构。底层原理：文档写入时分词，每个词对应一个 posting list（文档 ID 列表，含词频/位置），搜索时先查词、再对文档列表做并/交操作——所以「搜词」是 O(词数) 的查找而不是全表扫；MySQL 的 `LIKE '%xx%'` 无法利用 B+ 树前缀匹配，只能全表扫，这就是两者检索性能差距的本质。工程实践：B+ 树适合 OLTP 的等值/范围点查，倒排索引适合「不知道精确值、只知道关键词」的全文检索；两者是互补关系——MySQL 存事实、ES 做搜索，别互相替代。
+
+### Q2：ES 为什么是近实时？refresh 和 translog 是什么？
+
+**答**：标准结论：写入先进内存 buffer + translog，每秒一次 refresh 生成可搜索 segment，所以「约 1 秒后才可见」（NRT）。底层原理：translog 是 WAL（Write-Ahead Log）——每次写入先记 translog 防宕机丢数据；refresh 把 buffer 批量转成 segment，避免逐条随机写盘（LSM 批量合并思想，用批量换吞吐）；flush（commit）才把 segment 落盘并清空 translog。工程实践：对可见性要求高的场景可调小 `refresh_interval`（如 100ms）或调 refresh API 强制刷新，但会牺牲写吞吐；数据安全上「副本数 ≥1 + 定期快照」比追求秒级可见更重要——这也是 ES 当不了 OLTP 主库的原因之一。
+
+### Q3：深分页为什么慢？search_after 为什么能解决？
+
+**答**：标准结论：`from+size` 深翻页时每个分片都要取「from+size」条再全局合并丢弃，且 `max_result_window` 默认 10000 封死；`search_after` 用上一页最后一条的排序值做游标，成本恒定。底层原理：分布式下没有「全局第 N 条」，from+size 必须把每个分片的前 N 条全拉出来归并排序，N 越大成本越高；search_after 只向后取一页，天然避免重复跳过已看过的数据。工程实践：网页翻页（<1w 条）用 from+size 没问题；无限滚动/深翻页用 search_after；全量导出用 PIT + search_after 锁一致性快照（scroll 已不推荐）。常见误区：search_after 不能任意跳页，且排序值要唯一（加 _id 兜底）。
+
+### Q4：text 和 keyword 有什么区别？分词器怎么选？
+
+**答**：标准结论：text 分词建倒排索引做全文匹配，keyword 不分词整体存做精确过滤/排序/聚合。底层原理：text 走 analyzer（分词器）拆成 token，match 查询靠词匹配命中；keyword 走 doc_values 列式存储，term 查询整体等值。分词器：默认 standard 对中文只能按字/标点切、效果差；中文生产用 IK 分词器（`ik_max_word` 最细、`ik_smart` 智能），索引端与搜索端保持一致或用 max_word + smart 组合。工程实践：一个字段既要全文又要排序就做双字段（name + name.keyword）；别把时间/状态/ID 设成 text，否则无法精确匹配与排序聚合。
+
+### Q5：MySQL 和 ES 的数据怎么同步？为什么不能把 ES 当主库？
+
+**答**：标准结论：双写 / MQ 异步 / Canal（binlog 订阅）三种，生产推荐 MQ 异步 + 对账补偿。底层原理：ES 没有 ACID 事务，写入是近实时、刷盘靠 refresh/flush——当主库意味着「刚写的读不到、宕机可能丢」；且 ES 的强项是倒排检索而不是 OLTP 点查。工程实践：以 MySQL 为唯一事实源，写操作只动 MySQL，通过 MQ 异步同步 ES，消费失败重试 + 定时对账补偿兜底；Canal 订阅 binlog 无侵入但要部署维护。面试高频追问「一致性怎么保证」——回答最终一致 + 对账，而不是承诺强一致。

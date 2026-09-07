@@ -12,11 +12,11 @@
 | 关键词 | 一句话大白话 | 例子 |
 |-|-|-|
 | Spring 容器 | 一个「帮你造对象、帮你把对象之间连起来」的大管家 | 你只写 `@Service`，容器自动 new 并塞进需要的地方 |
-| IoC（控制反转） | 对象不再由你自己 `new`，交给容器管理——你只声明「我要什么」 | 以前 `new OrderService()`，现在 `@Autowired OrderService` |
-| DI（依赖注入） | 容器把你需要的依赖「递」给你，你不用自己找 | 构造器参数 `OrderRepository repo`，容器自动给 |
+| IoC（Inversion of Control，控制反转） | 对象不再由你自己 `new`，交给容器管理——你只声明「我要什么」 | 以前 `new OrderService()`，现在 `@Autowired OrderService` |
+| DI（Dependency Injection，依赖注入） | 容器把你需要的依赖「递」给你，你不用自己找 | 构造器参数 `OrderRepository repo`，容器自动给 |
 | Bean | 被容器管理起来的对象实例（一个普通对象，只是归容器管） | `@Service`/`@Component` 标注的类 |
 | 注解 | 写在类/方法上的「标签」，告诉容器做什么 | `@Service`、`@Transactional` |
-| AOP（面向切面） | 把「每个方法都要但又不想每个都写」的逻辑抽出来统一做 | 日志、事务、权限校验 |
+| AOP（Aspect-Oriented Programming，面向切面编程） | 把「每个方法都要但又不想每个都写」的逻辑抽出来统一做 | 日志、事务、权限校验 |
 | @Transactional | 声明「这个方法要么全成功、要么全回滚」的事务切面 | 下单 + 扣库存必须一起成功 |
 | 事件（Event） | 某件事发生后，广播给感兴趣的监听器去处理（解耦） | 下单成功 → 发短信 / 同步 ES |
 | 代理对象 | 容器给你的其实是「替身」，替身在你调用前后插入额外逻辑 | 你注入的是代理，不是原始类 |
@@ -187,6 +187,8 @@ public class CacheWarmer {
 
 > 坑：singleton Bean 注入 prototype Bean 时，prototype 只在注入那一刻创建一次——「注入的 prototype 失效」。解法：注入 `ObjectProvider<T>` 按需 `getObject()`。
 
+> ⏸️ **短期可以不学**：`request` / `session` 作用域在绝大多数业务里用不到（会话状态、租户隔离等特定场景才需要），且它让每个请求都新建 Bean、有额外开销。**何时回来学**：需要「跟随请求/会话」的有状态对象时。**面试最低要求**：能说清 singleton（默认）与 prototype 的区别，知道 request / session 是 Web 场景的扩展作用域即可。
+
 #### 1.4 循环依赖与三级缓存
 
 **循环依赖**：A 构造需要 B，B 构造又需要 A。Spring 用**三级缓存**解决 setter / 字段注入的环：
@@ -199,6 +201,7 @@ flowchart LR
 ```
 
 - 一级缓存 `singletonObjects`：成品 Bean；二级 `earlySingletonObjects`：提前曝光的半成品；三级 `singletonFactories`：**ObjectFactory**——关键在工厂可以延迟决定「返回原始对象还是 AOP 代理」，避免不必要的提前代理。
+- **为什么必须是三级而不是两级**：AOP 代理是 Bean 初始化完成后由 BeanPostProcessor 才生成的，若只有「原始对象缓存」，就无法把代理暴露给循环引用方。若退而求其次用两级并提前生成代理，则每个 Bean 都得在实例化时就把代理造好——绝大多数 Bean 根本不参与循环依赖，白白多一层代理开销。三级缓存让「要不要代理」推迟到真正发生循环依赖的那一刻才做决定。
 - **构造器注入的循环依赖无解**（Spring 直接启动报错）——这通常是设计问题（职责没拆开），该拆类而不是加 `@Lazy` 绕过。`@Lazy` 能解但要明白它只是把依赖推迟到首次使用。
 
 ### 2. AOP
@@ -230,7 +233,7 @@ public class AuditLogAspect {
 }
 ```
 
-> 底层就是阶段一第 3 讲的动态代理：容器注入给你的 `OrderService` 实际是**代理对象**（有接口默认 JDK 代理，无接口 CGLIB 生成子类），方法调用先进切面链，再透传给真实对象。
+> 底层就是阶段一第 3 讲的动态代理：容器注入给你的 `OrderService` 实际是**代理对象**——纯 Spring 5 默认「有接口走 JDK 代理、无接口走 CGLIB」；Spring Boot 2+ 默认 `spring.aop.proxy-target-class=true`，**一律用 CGLIB 生成子类**（不需要接口、能代理无接口类），方法调用先进切面链，再透传给真实对象。
 > 对照 NestJS：能力上 ≈ Interceptor，但 Spring AOP 在**字节码代理层**工作——任何 Bean 方法都能切（包括 Service 内部方法间调用之外的入口），NestJS Interceptor 只包 Controller 路由。
 
 #### 2.2 声明式事务与传播行为
@@ -256,7 +259,7 @@ public class OrderService {
 }
 ```
 
-常用传播行为：`REQUIRED`（默认，有就加入没有就新建）/ `REQUIRES_NEW`（独立新事务）/ `NESTED`（保存点，可部分回滚）/ `SUPPORTS`（有就有没有就没有）。
+常用传播行为：`REQUIRED`（默认，有就加入没有就新建）/ `REQUIRES_NEW`（独立新事务——挂起外层并另占一条数据库连接，代价最贵）/ `NESTED`（保存点，可部分回滚，不换连接）/ `SUPPORTS`（有就有没有就没有）。
 
 #### 2.3 五大失效场景（高频考点，必须能推导而不是背）
 
@@ -332,6 +335,8 @@ public class OrderPlacedListeners {
 }
 ```
 
+> 坑：`@TransactionalEventListener` 默认**只在「存在事务且提交成功」时执行**——方法没开事务时它直接静默跳过（设 `fallbackExecution = true` 才在无事务时也执行）。这是它和普通 `@EventListener` 行为差异最大的地方，线上「事件没发出去」先查这一条。
+
 > 对照 NestJS 的 EventEmitter：同样是发布订阅，但 Spring 事件**长在事务上**——这是 NestJS 没有的维度，也是阶段四「Outbox / 事件驱动」的本地事务基础。
 
 ### 4. 资源与环境
@@ -349,6 +354,8 @@ public class PriceGateway {
 
 - `Resource` 抽象统一 classpath / file / URL 三种资源定位（`@Value("classpath:rules.json")`）。
 - `PropertySource` 体系：配置的多层来源按优先级叠加——Boot 的 `application.yml` 构建于此（下讲展开）。
+
+> ⏸️ **短期可以不学**：`Resource` 抽象与 `PropertySource` 细节，日常业务开发基本碰不到——Boot 的 `application.yml` + `@ConfigurationProperties` 已经覆盖 99% 的配置读取需求。**何时回来学**：做框架 / 中间件开发、需要统一读取 classpath 与文件系统资源时。**面试最低要求**：知道 `@Value` 与 `Environment` 是两种配置读取入口即可。
 
 ### 坑点提醒
 
@@ -371,3 +378,20 @@ public class PriceGateway {
 1. 把上面「失效场景 1 自调用」改成不失效的两种方案，各自代价是什么？
 2. `REQUIRES_NEW` 的操作日志事务如果卡死，外层下单事务会怎样？怎么兜底？
 3. NestJS 的请求作用域 Provider 在性能上为什么不推荐？对应到 Spring 的 `request` 作用域，什么场景才真正需要它？
+
+## 常见面试题
+
+### Q1：Spring 中 Bean 的生命周期是怎样的？`@PostConstruct`、`InitializingBean`、`init-method` 的执行顺序？
+**答**：标准答案是一串阶段：**实例化（new 出对象）→ 属性填充（注入依赖）→ Aware 回调（如 `BeanNameAware`）→ `BeanPostProcessor.postProcessBeforeInitialization` → 初始化回调（`@PostConstruct` → `InitializingBean.afterPropertiesSet` → `init-method`，三者按此顺序）→ `postProcessAfterInitialization` → 就绪使用 → 销毁（`@PreDestroy` → `destroy`）**。原理层：容器把「创建对象」拆成多个可插拔阶段，每个阶段都留扩展点，`BeanPostProcessor` 是**容器级**流水线，对容器里所有 Bean 生效——Spring 自己的魔法（AOP 代理生成、`@Configuration` 增强）都是挂在这里的。工程层：初始化逻辑放 `@PostConstruct` 而不是构造器——构造器执行时依赖还没注入完，在构造器里用注入字段必踩 NPE；且别把 `BeanPostProcessor` 当业务工具用，它作用于全局、影响面太大。
+
+### Q2：Spring 是如何解决循环依赖的？为什么构造器注入的循环依赖解决不了？
+**答**：标准答案：A 依赖 B、B 依赖 A 时，Spring 用三级缓存破环——`singletonObjects`（一级，成品）、`earlySingletonObjects`（二级，提前暴露的半成品）、`singletonFactories`（三级，ObjectFactory 工厂）。流程：A 实例化后先把工厂放进三级缓存并提前暴露；B 创建时从三级取工厂拿到 A 的早期引用、完成自己的注入后进入一级；A 再拿成品 B 完成注入。原理层：**为什么是三级而不是两级**——AOP 代理要等 BeanPostProcessor 在初始化后生成，三级缓存把「返回原始对象还是代理」的决策推迟到真正发生循环依赖那一刻，避免所有 Bean 都提前生成代理。工程层：该机制只救得了 setter / 字段注入；构造器注入的环在 Spring 看来是「构造器调用无法提前暴露对象」，直接启动报错——这通常是职责没拆开的设计信号，正确做法是拆类，而不是 `@Lazy` 一刀切绕过。
+
+### Q3：`@Transactional` 有哪些常见的失效场景？
+**答**：标准答案五大场景：①**自调用**——同类里 `this.method()` 走的是原始对象而非代理，切面没机会介入；②**非 public 方法**——代理默认只拦截 public；③**异常被吞**——try-catch 里把异常吃掉了，切面看不到异常照常提交；④**受检异常默认不回滚**——抛 `Exception`（checked）不触发回滚，需显式 `rollbackFor`；⑤**多线程边界**——事务上下文绑定在 ThreadLocal，在事务方法里开子线程做 DB 操作，子线程不在同一事务。原理层：`@Transactional` = 代理对象上的环绕切面 + ThreadLocal 绑定的连接/事务上下文，凡是让「调用绕过代理」或「执行换了线程」的写法都会失效。工程层：自调用优先拆类；业务异常一律自定义 `RuntimeException`（如 `BizException`），天然默认回滚，别依赖 `rollbackFor` 兜底；`@Transactional` 只标在 public 方法上。
+
+### Q4：`REQUIRED`、`REQUIRES_NEW`、`NESTED` 三种传播行为有什么区别？各自适合什么场景？
+**答**：标准答案：`REQUIRED`（默认）有事务就加入、没有就新建；`REQUIRES_NEW` 挂起外层事务、开一个全新的独立事务；`NESTED` 在外层事务里建**保存点（savepoint）**，内层回滚只回滚到保存点、不影响外层。原理层：`REQUIRES_NEW` 会另占一条数据库连接，内外层互不可见、必须等内层提交外层才能提交——代价最贵；`NESTED` 不换连接，靠数据库保存点实现「部分回滚」，代价低。工程层：操作审计日志用 `REQUIRES_NEW`——「主事务回滚了日志也要留下」；某个失败不影响全局的步骤（如批量处理中的单项失败）用 `NESTED`；绝大多数业务用默认 `REQUIRED` 就够了，别滥用前两者——连接被多占、长事务风险都随之而来。
+
+### Q5：Spring AOP 默认用 JDK 动态代理还是 CGLIB？两者有什么区别？
+**答**：标准答案：纯 Spring（Framework）默认「目标有接口走 JDK 动态代理、无接口走 CGLIB」；**Spring Boot 2+ 默认 `spring.aop.proxy-target-class=true`，一律用 CGLIB**。原理层：JDK 代理基于接口在运行时生成代理类、用反射调用目标方法，要求目标必须实现接口；CGLIB 基于字节码生成目标类的**子类**，不要求接口，但 `final` 类 / `final` 方法无法被继承增强。工程层：Boot 默认 CGLIB 是为了「不需要接口也能被切面覆盖」，代价是别把切面目标方法标成 `final`；这也是 `@Transactional` 失效场景的一个隐蔽变体——方法标了 `final`，CGLIB 增强不到，事务静默失效。判断线上用的是哪种，看启动日志里的 `proxyTargetClass` 或 DEBUG 日志即可。

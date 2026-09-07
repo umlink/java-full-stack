@@ -94,6 +94,8 @@ public class NioDemo {
 | NIO（Non-blocking IO） | 多路复用，少量线程管理大量连接 | 一个 Selector 可管成千上万连接 |
 | AIO（Async IO） | 内核完成 IO 后回调通知 | Windows IOCP 完整，Linux 落地有限 |
 
+> ⏸️ **短期可以不学**：AIO（异步 IO）——Linux 上的 AIO 落地不完善（生产主流仍是 epoll 多路复用），Netty 也未主推，绝大多数业务开发接触不到。**何时回来学**：深入 Netty 的 io_uring 移植，或面试被追问「Java 为什么没普及 AIO」时。**面试最低要求**：能说「Java AIO 在 Linux 支持有限、生产主流是 NIO 多路复用；虚拟线程出现后连同步 BIO 写法都复活了」即可。
+
 #### 1.1 BIO 的困境（代码看到痛处）
 
 ```java
@@ -122,6 +124,8 @@ public class BioServer {
 ```
 
 > **痛点本质**：阻塞的是**线程**，而平台线程是昂贵资源（约 1MB 栈 + 内核调度实体）。BIO 的解法只有两条路：让线程变廉价（虚拟线程），或者让一个线程能管多个连接（NIO）。
+
+> ⏸️ **短期可以不学**：手写 BIO 服务器（上面的 `BioServer`）只是「看清痛处」的教学演示——生产上没人再用「每连接一个平台线程」的写法，虚拟线程时代（阶段一第 7 讲）同步 BIO 写法由虚拟线程扛即可，不用再手写。**何时回来学**：不需要专门学，理解「为什么被淘汰」就够了。**面试最低要求**：能说「BIO 一连接一线程、线程是重资源，所以被 NIO 多路复用与虚拟线程取代」即可。
 
 ### 2. 多路复用：select / poll / epoll
 
@@ -212,7 +216,7 @@ public class ZeroCopySend {
 
 ### 4. Netty 三件套
 
-- **Netty**：对 NIO 的工程化封装（解决空轮询 bug、内存池、粘包拆包）——Dubbo / gRPC-Java / ES 客户端的通信底座。业务开发不直接写它，但连接数 / 直接内存问题要能推理到这层。
+- **Netty**：对 NIO 的工程化封装（解决空轮询 bug、内存池、粘包拆包）——Dubbo / gRPC-Java / ES 客户端的通信底座。业务开发不直接写它，但连接数 / 直接内存问题要能推理到这层。三个词背后的痛点：**空轮询 bug** 是 Linux epoll 的已知缺陷（偶发无事件也立即返回，让 `select()` 空转烧 CPU，Netty 用自旋计数规避）；**粘包/拆包** 源于 TCP 是**字节流**、没有消息边界（一次 `read` 可能读到半个请求或多条请求），Netty 用「长度字段 / 分隔符 / 定长」解码器把字节流切回完整消息。
 
 ```java
 import io.netty.bootstrap.ServerBootstrap;
@@ -260,6 +264,8 @@ public class NettyEchoServer {
 - **EventLoop**：事件循环线程，一个连接从生到死只归属一个 EventLoop（免锁竞争）。与 Node 单线程事件循环的差异：Netty 是**多 EventLoop 并行**，每个仍是单线程循环。
 - **Channel**：连接抽象（fd + 读写操作 + pipeline）。
 - **ByteBuf**：读写指针分离的字节容器——`ByteBuffer` 的 `flip()` 忘调是经典事故（上面 NIO 示例里 flip 那行就是），ByteBuf 用 `readIndex` / `writeIndex` 两个指针消灭了这个心智负担，并支持池化（减少分配与 GC）。
+
+> ⏸️ **短期可以不学**：ByteBuf 内存池的内部实现（`PooledByteBuf` 的 arena / chunk / page 分级、线程本地缓存与分配器调优参数）——业务层只消费框架 API，不碰分配器。**何时回来学**：排查「直接内存被 Netty 撑爆」，或面试 Netty 方向时。**面试最低要求**：能说「ByteBuf 区分堆内/直接内存、读写指针分离免去 flip，池化是为了减少分配与 GC 压力」即可。
 - **编解码的字符集坑**：`StringDecoder` / `StringEncoder` 不传参数时默认字符集是 ISO-8859-1——中文必须显式传 `CharsetUtil.UTF_8`（如 `new StringDecoder(CharsetUtil.UTF_8)`），中文乱码十有八九栽在这。
 
 ### 坑点提醒
@@ -267,7 +273,7 @@ public class NettyEchoServer {
 - `ByteBuffer` 忘 `flip()`：写出全空或读到脏数据——翻转前 limit 还是旧容量位。
 - NIO 不等于异步：`select()` 仍然是阻塞等待，只是等待的粒度从「单个连接」变成「一批事件」。
 - 虚拟线程时代 BIO 写法复活了：`同步 BIO 代码 + 虚拟线程` 对多数业务已够用（阶段一第 7 讲）——NIO 的手工 Selector 代码几乎不该再手写。
-- Netty 的堆外直接内存要 `-XX:MaxDirectMemorySize` 兜底，不然泄漏时表现成「堆很健康但进程 OOM 被杀」。
+- Netty 的堆外直接内存（off-heap / Direct Memory）要 `-XX:MaxDirectMemorySize` 兜底，不然泄漏时表现成「堆很健康但进程 OOM 被杀」——直接内存不走 JVM 堆、不受 GC 管理，好处是网络读写免去「堆内 → 堆外」拷贝，坏处是泄漏时 GC 帮不上忙，只能靠参数限制 + 监控 native 内存。
 
 ## 本节自检
 
@@ -281,3 +287,21 @@ public class NettyEchoServer {
 1. BIO + 虚拟线程（`Executors.newVirtualThreadPerTaskExecutor()` 里跑 accept 循环）和 NIO Selector，各自适合什么规模 / 什么维护成本偏好的团队？
 2. 为什么 Netty 把「一个连接固定绑定一个 EventLoop」而不是让任意 EventLoop 处理任意连接的事件？（提示：pipeline 里的 handler 是否需要加锁？）
 3. `mmap` 与 `sendfile` 都是零拷贝路径，为什么消息队列类中间件（Kafka）偏爱 sendfile，而 RocksDB 这类存储引擎偏爱 mmap？
+
+## 常见面试题
+
+### Q1：NIO 的三大组件是什么？为什么一个线程能管理成千上万个连接？
+
+**答**：三大组件是 Channel（通道）、Buffer（缓冲区）、Selector（多路复用器）。Channel 是连接的抽象（文件、网络都抽象成通道）；Buffer 是读写数据的载体（读写要 flip 切换模式）；Selector 是核心——一个线程把多个 Channel 注册到 Selector 上，`select()` 阻塞等待内核通知「哪些连接就绪」，然后只处理就绪的连接。为什么能一个线程管 N 个连接：阻塞的粒度从「等单个连接的数据」变成「等一批连接中任何一个有事件」，事件就绪时才分配线程处理；对比 BIO 一连接一线程，NIO 把线程数与连接数彻底解耦。三个高频坑：`selectedKeys()` 处理完要 clear、`flip()` 忘了切换读写模式、非阻塞通道没配好。工程上你很少手写它——Tomcat NIO / Netty / WebFlux 都是它的工程化封装，但「连接数问题、直接内存问题」都要能推理到这一层。
+
+### Q2：select、poll、epoll 有什么区别？为什么 epoll 是 O(1)？
+
+**答**：三者都是 I/O 多路复用（I/O Multiplexing）的实现，把「一堆 fd 谁就绪了」的询问交给内核。select/poll 每次调用都要把全部 fd 从用户态拷进内核、内核线性扫描一遍，复杂度 O(n)，select 还有 FD_SETSIZE（1024）上限；epoll 是 Linux 2.6+ 的方案：fd 注册一次进内核**红黑树**，fd 就绪时内核通过事件回调把就绪项挂进**就绪链表**，`epoll_wait` 直接返回就绪链表——不需要全量扫描和重复拷贝，事件通知近似 O(1)。工程要点：NodeJS 的 libuv、Redis、Tomcat NIO 在 Linux 上都构建于 epoll；跨平台差异（macOS 用 kqueue、Windows 用 IOCP）由 Netty 这类框架抹平。面试加分：能说出「红黑树管注册 + 就绪链表收事件」这个双结构。
+
+### Q3：什么是零拷贝？它省掉了哪几次拷贝？sendfile 和 mmap 有什么区别？
+
+**答**：零拷贝（Zero-Copy）指数据从磁盘到网卡的过程中尽量减少「内核态 ↔ 用户态」之间的拷贝。传统 read + write 路径：磁盘 → 内核读缓冲 → 用户缓冲 → 内核 socket 缓冲 → 网卡，共 4 次拷贝 + 4 次上下文切换；`sendfile` 让数据在内核内直接走「磁盘 → 页缓存 → socket 缓冲 → 网卡」，砍掉两次用户态参与的拷贝，上下文切换也减少。mmap 是把文件映射进用户地址空间，用户态能直接读写内核页缓存，省掉一次内核 → 用户的拷贝，适合随机读改写（如 RocksDB 存储引擎）；sendfile 适合「整块转发」——Kafka 发消息、Nginx 发静态文件都是这条路。Java 侧：`FileChannel.transferTo()` 底层即 sendfile，目标是 WritableByteChannel。工程误区：零拷贝不是「零次拷贝」——DMA 拷贝仍在，省的是用户态参与和上下文切换。
+
+### Q4：直接内存（堆外内存）和堆内存有什么区别？为什么要用直接内存？
+
+**答**：堆内存由 JVM 管理、受 GC 支配；直接内存（Direct Memory / off-heap）是 `ByteBuffer.allocateDirect` 分配的本机内存，不走堆、不受 GC 管理（由 `Cleaner` 配合回收）。优势：① 网络读写时数据直接在系统内存和内核/网卡之间搬，免去「堆内 → 堆外」的一次拷贝——NIO 读写要求数据在直接缓冲区时效率最高；② 不受堆大小限制，大对象不触发频繁 Full GC。代价与坑：① 不受 GC 管，泄漏时表现成「堆很健康但进程 OOM 被杀」（native 内存吃光）；② 需要 `-XX:MaxDirectMemorySize` 限制并监控；③ 分配/释放成本比堆内高，要池化复用。Netty 的 ByteBuf 区分 heap / direct 两种、默认走池化 direct——这也是 Netty 连接数问题的排查重点：直接内存暴涨先看是不是缓冲泄漏。
