@@ -187,7 +187,7 @@ public class NioEchoServer {
 ```mermaid
 flowchart LR
     FD[客户端连接 fd<br/>注册一次] -->|登记进内核| TREE[红黑树 = 登记本<br/>存所有注册的 fd]
-    TREE -->|某 fd 就绪时<br/>事件回调触发| READY[就绪链表 = 叫号屏<br/>只挂"奶茶好了"的号]
+    TREE -->|某 fd 就绪时<br/>事件回调触发| READY[就绪链表 = 叫号屏<br/>只挂「奶茶好了」的号]
     READY -->|epoll_wait 返回<br/>只取走就绪的 fd| APP[应用程序<br/>不用全量扫描]
 ```
 

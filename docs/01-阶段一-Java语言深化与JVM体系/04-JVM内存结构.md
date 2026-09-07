@@ -87,7 +87,7 @@ flowchart TB
     end
     subgraph 线程共享[线程共享（随 JVM 生灭）]
         Heap[堆<br/>大仓库：new 的货全进仓<br/>定期清理 = GC]
-        Meta[元空间 Metaspace<br/>档案室：类的"岗位说明书"<br/>（本地内存，JDK8 起）]
+        Meta[元空间 Metaspace<br/>档案室：类的「岗位说明书」<br/>（本地内存，JDK8 起）]
     end
     Stack -->|引用| Heap
     Meta -.类元信息.-> Heap
