@@ -137,12 +137,12 @@ boot-app 实操的正确打开方式：
 ```text
 ① 学：读 docs/ 当前讲（CLAUDE.md 已约束 AI 的讲解风格：术语首现即解释、类比双段式）
 ② 问：卡住的点用「四层提问法」问透（先预测再验证）
-③ 落：按 11-实战产品蓝图 的映射表，把本讲技术点落进 boot-app（Code Review 模式）
+③ 落：按 10-实战产品蓝图 的映射表，把本讲技术点落进 boot-app（Code Review 模式）
 ④ 检：讲末的自检/面试题闭卷过一遍（出题官模式），错题进卡点日志
 ⑤ 复：进入下一阶段前，让 AI 抽查上一阶段（间隔重复）
 ```
 
-各文件的角色：[docs/](docs/README.md) 是教材、[实战产品蓝图](docs/11-实战产品蓝图.md) 是练习册目录、[boot-app](boot-app/README.md) 是操场、[CLAUDE.md](CLAUDE.md) 是给 AI 立的规矩、[学习时间规划](docs/学习时间规划.md) 是日程表、本文是用法说明书。
+各文件的角色：[docs/](docs/README.md) 是教材、[实战产品蓝图](docs/10-实战产品蓝图.md) 是练习册目录、[boot-app](boot-app/README.md) 是操场、[CLAUDE.md](CLAUDE.md) 是给 AI 立的规矩、[学习时间规划](docs/学习时间规划.md) 是日程表、本文是用法说明书。
 
 ---
 
