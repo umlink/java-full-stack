@@ -6,7 +6,7 @@
 > 迁移的是**心智模型**，重学的是**语法与生态** —— 主线约 9 个月，覆盖从 JVM 到云原生的完整工程能力栈
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
-![Docs: 63](https://img.shields.io/badge/Docs-63-blue)
+![Docs: 64](https://img.shields.io/badge/Docs-64-blue)
 ![Stages: 8](https://img.shields.io/badge/Stages-0%E2%80%938-orange)
 
 </div>
@@ -53,6 +53,7 @@
 
 ```
 java-full-stack/
+├── boot-app/                         # 配套实操工程：Spring Boot 4 多模块 + H2 + MyBatis-Plus
 ├── docs/
 │   ├── 专有名词速查表.md                  # 名词速查（学习伴侣）
 │   ├── 学习时间规划.md                     # 总排期（甘特图）
@@ -73,25 +74,36 @@ java-full-stack/
 
 ## 🚀 快速开始
 
-本知识库以 Markdown 文档形式组织，无需任何构建步骤，推荐三种使用方式：
+### 📚 学习文档（无需构建，随开随读）
 
-1. **GitHub / GitLab 在线阅读** —— 直接浏览 `docs/` 目录，按阶段顺序学习；
+1. **GitHub 在线阅读** —— 直接浏览 `docs/` 目录，按阶段顺序学习；
 2. **VS Code + Markdown 预览** —— 克隆到本地后使用 `Markdown Preview Enhanced` 等插件，完整渲染甘特图（Mermaid）等图表；
 3. **Typora / Obsidian 等笔记软件** —— 作为个人知识库导入，支持双向链接与检索。
 
 ```bash
 # 克隆仓库
-git clone https://github.com/<your-name>/java-full-stack.git
+git clone git@github.com:umlink/java-full-stack.git
 cd java-full-stack
 
 # 从阶段零开始，按顺序推进
 # 打开 docs/00-阶段零-起点盘点与补课/01-能力迁移对照.md
 ```
 
+### 🛠️ 实操工程（学完阶段零/二后动手跑）
+
+仓库自带配套工程 [boot-app/](boot-app/README.md)（Spring Boot 4 多模块 + H2 + MyBatis-Plus），**只需本机装 JDK 25**（Maven 由仓库自带的 mvnw 提供，无需安装）：
+
+```bash
+cd boot-app
+./mvnw -pl services/user-service -am install -DskipTests   # Windows 用 mvnw.cmd
+./mvnw -pl services/user-service spring-boot:run            # 启动后访问 http://localhost:8080/api/users
+```
+
 ### 推荐学习节奏
 
 - **先盘点，再上路**：从「阶段 0 起点盘点」开始，明确自己「无需重学」与「必须重学」的部分；
-- **一段一自检**：每完成一个阶段，对照该阶段末尾的「本阶段你该做到」清单做能力自检；
+- **一段一自检**：每完成一个阶段，对照该阶段末尾的「本节自检」清单做能力自检；
+- **边学边练**：学完阶段零/二的基础知识后，用 [boot-app](boot-app/README.md) 实操验证（文档每个概念在工程里都有对应落点）；
 - **时间弹性**：主线约 9 个半月，时间不足可拉长周期，保持阶段间复盘即可。
 
 ## 🤝 参与贡献
@@ -100,9 +112,10 @@ cd java-full-stack
 
 - 勘误与修正（错别字、过时信息）；
 - 新增阶段 / 主题文档（请遵循既有编号与行文风格）；
-- 补充实战案例、面试题或配套资源。
+- 补充实战案例、面试题或配套资源；
+- 完善配套工程 boot-app（如新增服务模块、对接文档新概念）。
 
-请确保提交内容符合既有文档的目录结构与 Markdown 风格。
+请确保提交内容符合既有文档的目录结构与 Markdown 风格；**文档增强请先阅读 [CLAUDE.md](CLAUDE.md) 的写作规范**（7 段式模板、术语首现即解释、类比双段式、Mermaid 规范等）。
 
 ## 📄 许可证
 

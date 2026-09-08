@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- 聚合父 pom：只负责锁版本 + 声明模块，不含业务代码（对齐阶段二 02 讲「多模块聚合工程」范式） -->
+    <groupId>com.example</groupId>
+    <artifactId>boot-app-parent</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <name>boot-app-parent</name>
+    <description>与学习文档配套的 Spring Boot 4 多模块工程：Java 25 + Boot 4.0 + MyBatis-Plus + H2</description>
+
+    <modules>
+        <!-- 公共底座：被业务服务引用，打包为普通 jar -->
+        <module>infrastructure/common-core</module>
+        <!-- 业务服务：每个都是可独立部署的 Spring Boot 应用 -->
+        <module>services/user-service</module>
+    </modules>
+
+    <properties>
+        <java.version>25</java.version>
+        <!-- 版本矩阵：对齐阶段二 02 讲 BOM 示例（spring-boot-dependencies 4.0.0） -->
+        <spring-boot.version>4.0.0</spring-boot.version>
+        <!-- MyBatis-Plus 3.5.9 起提供 Boot 4 专用 starter；分页插件的 jsqlparser 需单独引入 -->
+        <mybatis-plus.version>3.5.17</mybatis-plus.version>
+        <lombok.version>1.18.42</lombok.version>
+        <maven-compiler-plugin.version>3.14.0</maven-compiler-plugin.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Spring Boot 官方 BOM：统一托管 spring / boot / h2 / test 等依赖版本 -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring-boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- MyBatis-Plus：Boot 4 专用 starter（3.5.13 起提供，勿与 boot3/boot 混用） -->
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-spring-boot4-starter</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
+            <!-- 分页插件依赖的 SQL 解析器：MP 3.5.9+ 起为可选依赖，需显式引入 -->
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-jsqlparser</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
+            <!-- 模块间依赖 -->
+            <dependency>
+                <groupId>com.example</groupId>
+                <artifactId>common-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>${maven-compiler-plugin.version}</version>
+                    <configuration>
+                        <release>${java.version}</release>
+                        <!-- Boot 4 / Spring 7 硬性要求：保留方法参数名（@PathVariable/@RequestParam 靠反射读参数名） -->
+                        <parameters>true</parameters>
+                        <!-- Lombok + Java 25：必须显式声明注解处理器路径，否则不生成 getter/setter -->
+                        <annotationProcessorPaths>
+                            <path>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok</artifactId>
+                                <version>${lombok.version}</version>
+                            </path>
+                        </annotationProcessorPaths>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-maven-plugin</artifactId>
+                    <version>${spring-boot.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+</project>

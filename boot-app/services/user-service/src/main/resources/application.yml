@@ -1,0 +1,43 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: boot-app
+
+  datasource:
+    driver-class-name: org.h2.Driver
+    # H2 文件模式：数据固定落盘在 boot-app/data/（聚合根下，随工程走、可提交记录）
+    # 说明：工作目录是服务模块 services/user-service（mvn 与 IDEA 运行均默认如此），
+    #       相对路径 ../../data 即指向聚合根 boot-app/data/
+    # MODE=MySQL：让 H2 尽量兼容 MySQL 语法，与文档中的 MySQL 心智保持一致
+    # AUTO_SERVER=TRUE：允许 IDEA Database 面板等工具并发连接查看数据
+    # 后期切 MySQL：pom 引入 mysql-connector-j，url 换 jdbc:mysql://localhost:3306/bootapp（MODE=MySQL 已对齐方言，改动最小）
+    url: jdbc:h2:file:../../data/bootapp;MODE=MySQL;AUTO_SERVER=TRUE
+    username: sa
+    password: ""
+
+  sql:
+    init:
+      # 每次启动执行 schema.sql 建表 + 初始化数据（脚本用幂等写法，可重复执行）
+      mode: always
+      schema-locations: classpath:db/schema.sql
+
+  h2:
+    console:
+      # 浏览器控制台：http://localhost:8080/h2-console
+      # JDBC URL 填上面 datasource.url 那一行，用户名 sa、密码留空
+      enabled: true
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    # 学习期：把执行的 SQL 打印到控制台，方便看「MP 到底发了什么 SQL」
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    banner: false
+    db-config:
+      # 全局逻辑删除：delete 接口实际执行 UPDATE t_user SET deleted=1，查询自动过滤已删除行
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
