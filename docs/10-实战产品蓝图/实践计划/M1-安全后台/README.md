@@ -19,9 +19,9 @@
 | 04 | [RBAC 表结构与初始角色](04-RBAC表结构与初始角色.md) | 已完成 | 03 |
 | 05 | [注册接口与密码哈希](05-注册接口与密码哈希.md) | 已完成 | 04 |
 | 06 | [登录接口与 JWT 签发](06-登录接口与JWT签发.md) | 已完成 | 05 |
-| 07 | [JWT 认证过滤器](07-JWT认证过滤器.md) | 待开始 | 06 |
-| 08 | [RBAC 管理接口授权](08-RBAC管理接口授权.md) | 未解锁 | 07 |
-| 09 | [OpenAPI 与 M1 回归](09-OpenAPI与M1回归.md) | 未解锁 | 08 |
+| 07 | [JWT 认证过滤器](07-JWT认证过滤器.md) | 已完成 | 06 |
+| 08 | [RBAC 管理接口授权](08-RBAC管理接口授权.md) | 已完成 | 07 |
+| 09 | [OpenAPI 与 M1 回归](09-OpenAPI与M1回归.md) | 待开始 | 08 |
 
 ## 进度记录
 
@@ -34,3 +34,5 @@
 | 2026-09-09 | M1-04 | 已完成 | `./mvnw -pl services/user-service -am test`：15 个测试通过；覆盖初始 RBAC 数据、管理员权限关联与脚本幂等 |
 | 2026-09-09 | M1-05 | 已完成 | `./mvnw -pl services/user-service -am test`：30 个测试通过；覆盖注册成功、重复用户名/邮箱 409、默认 USER 角色、密码 BCrypt 哈希不外泄、同密码加盐不同哈希、M0 旧式创建兼容、接口 /api 前缀与脚本幂等 |
 | 2026-09-09 | M1-06 | 已完成 | `./mvnw clean test -pl services/user-service -am`：35 个测试通过；覆盖登录成功 JWT、错误凭据统一 401、用户 ID/过期时间声明、JWT 配置时长与真实 /api 路径 |
+| 2026-09-09 | M1-07 | 已完成 | `./mvnw -pl services/user-service -am test`：37 个测试通过；覆盖无 token、篡改 token、过期 token 的 401/40100，以及有效 token 恢复当前用户 ID |
+| 2026-09-09 | M1-08 | 已完成 | `./mvnw -pl services/user-service -am test`：41 个测试通过；覆盖管理接口的 401/40100、USER 的 403/40300 和 ADMIN 的 200/0 |

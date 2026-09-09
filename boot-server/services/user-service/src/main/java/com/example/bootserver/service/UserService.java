@@ -1,11 +1,13 @@
 package com.example.bootserver.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.example.bootserver.common.error.BusinessException;
 import com.example.bootserver.common.error.ErrorCode;
 import com.example.bootserver.controller.dto.LoginRequest;
 import com.example.bootserver.controller.dto.RegisterRequest;
+import com.example.bootserver.controller.dto.UpdateUserRequest;
 import com.example.bootserver.entity.Role;
 import com.example.bootserver.entity.User;
 import com.example.bootserver.entity.UserRole;
@@ -17,6 +19,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 /**
  * 用户服务 —— 继承 MyBatis-Plus 的 {@link ServiceImpl} 获得基础 CRUD 能力。
  * <p>
@@ -25,6 +29,9 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class UserService extends ServiceImpl<UserMapper, User> {
+
+    // 此哈希不是密钥或账号密码；用户不存在时仍执行一次 BCrypt，减小用户名存在性带来的时序差异。
+    private static final String DUMMY_PASSWORD_HASH = "$2a$10$UDLudaZ5w6xai.L9/sNb..Q.cywghB4Il0Rw8jWLg7DSFbDjtEpg6";
 
     private final RoleMapper roleMapper;
     private final UserRoleMapper userRoleMapper;
@@ -78,11 +85,14 @@ public class UserService extends ServiceImpl<UserMapper, User> {
      */
     public User authenticate(LoginRequest request) {
         User user = lambdaQuery().eq(User::getUsername, request.username()).one();
+        String passwordHash = user == null || user.getPasswordHash() == null
+                ? DUMMY_PASSWORD_HASH : user.getPasswordHash();
+        // 无论账号是否存在都执行一次 BCrypt，避免攻击者以明显更快的响应枚举用户名。
+        boolean passwordMatches = passwordEncoder.matches(request.password(), passwordHash);
         if (user == null
-                || user.getPasswordHash() == null
                 || user.getStatus() == null
                 || user.getStatus() != User.STATUS_ACTIVE
-                || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+                || !passwordMatches) {
             throw invalidCredentials();
         }
         return user;
@@ -115,7 +125,7 @@ public class UserService extends ServiceImpl<UserMapper, User> {
 
     /**
      * 绑定默认 USER 角色：注册不开放指定角色，普通用户永远只能拿到 USER，
-     * ADMIN 只能由后续管理功能（M1-08）在受控流程里分配。
+     * ADMIN 只能由受控管理流程分配，注册接口永远不开放指定角色。
      */
     private void bindDefaultUserRole(Long userId) {
         // 用角色码定位主键，避免依赖每次启动可能变化的自增 ID
@@ -145,5 +155,46 @@ public class UserService extends ServiceImpl<UserMapper, User> {
             throw new UserNotFoundException();
         }
         return user;
+    }
+
+    /** 管理列表按主键稳定排序，避免分页在未指定排序时因数据库执行计划变化而跳项或重复。 */
+    public List<User> listUsers() {
+        return list(new LambdaQueryWrapper<User>().orderByAsc(User::getId));
+    }
+
+    /** 管理分页限制在 Controller 校验后的范围内，Service 只负责查询意图。 */
+    public Page<User> listUsersByPage(long page, long size) {
+        return page(new Page<>(page, size), new LambdaQueryWrapper<User>().orderByAsc(User::getId));
+    }
+
+    /** 以展示名模糊检索时同样使用稳定排序，使相同条件的结果顺序可预测。 */
+    public List<User> searchUsersByName(String name) {
+        return list(new LambdaQueryWrapper<User>().like(User::getName, name).orderByAsc(User::getId));
+    }
+
+    /**
+     * 更新管理员可维护的基础资料。
+     *
+     * 先确认资源存在，再从 DTO 白名单逐项映射；请求体中的 status、deleted 等字段没有入口，
+     * 因而不会被 MyBatis-Plus 的 updateById 意外写入数据库。
+     */
+    public boolean updateUserProfile(Long id, UpdateUserRequest request) {
+        getRequiredById(id);
+        if (!request.hasUpdateField()) {
+            throw new BusinessException(ErrorCode.PARAMETER_ERROR, "至少提供一个可更新字段");
+        }
+
+        User user = new User();
+        user.setId(id);
+        user.setName(request.name());
+        user.setEmail(request.email());
+        user.setAge(request.age());
+        return updateById(user);
+    }
+
+    /** 删除前统一确认资源存在，使删除、详情和更新对不存在用户都返回同一 404 语义。 */
+    public boolean deleteUserById(Long id) {
+        getRequiredById(id);
+        return removeById(id);
     }
 }

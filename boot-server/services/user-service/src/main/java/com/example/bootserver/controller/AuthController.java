@@ -39,7 +39,7 @@ public class AuthController {
      * 规则完成，客户端无法通过请求体指定角色。成功返回新用户的自增主键 ID。
      */
     @PostMapping("/register")
-    public Result<Long> register(@Valid @RequestBody RegisterRequest request) {
+    public Result<Long> registerUser(@Valid @RequestBody RegisterRequest request) {
         return Result.ok(userService.register(request));
     }
 
@@ -50,7 +50,7 @@ public class AuthController {
      * 这里不根据用户是否存在分支，从入口层避免把账号枚举信息泄露给客户端。
      */
     @PostMapping("/login")
-    public Result<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
+    public Result<LoginResponse> loginUser(@Valid @RequestBody LoginRequest request) {
         User user = userService.authenticate(request);
         return Result.ok(jwtTokenService.issueAccessToken(user.getId()));
     }

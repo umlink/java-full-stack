@@ -139,8 +139,7 @@ class RegisterFlowIntegrationTests {
     }
 
     private List<Long> findRoleIdsByUserId(Long userId) {
-        return userRoleMapper.selectList(new LambdaQueryWrapper<UserRole>()
-                        .eq(UserRole::getUserId, userId))
+        return userRoleMapper.selectByUserId(userId)
                 .stream()
                 .map(UserRole::getRoleId)
                 .toList();

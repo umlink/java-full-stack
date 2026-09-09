@@ -3,6 +3,7 @@ package com.example.bootserver.handler;
 import com.example.bootserver.common.error.BusinessException;
 import com.example.bootserver.common.error.ErrorCode;
 import com.example.bootserver.common.result.Result;
+import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -55,6 +56,16 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Result<Void>> handleUnreadableMessage(HttpMessageNotReadableException exception) {
         // Jackson 的解析细节可能含字段和类型信息，不应直接暴露给调用方。
         return failure(ErrorCode.PARAMETER_ERROR, "请求体格式错误");
+    }
+
+    /** 处理 @RequestParam、@PathVariable 上的约束；它们不经过 @RequestBody 的绑定异常。 */
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<Result<Void>> handleConstraintViolationException(ConstraintViolationException exception) {
+        String message = exception.getConstraintViolations().stream()
+                .findFirst()
+                .map(violation -> violation.getMessage())
+                .orElse(ErrorCode.PARAMETER_ERROR.getMessage());
+        return failure(ErrorCode.PARAMETER_ERROR, message);
     }
 
     @ExceptionHandler(Exception.class)

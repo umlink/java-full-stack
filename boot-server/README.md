@@ -1,6 +1,6 @@
 # boot-server：与学习文档配套的 Spring Boot 4 多模块工程
 
-本工程是 [实战产品蓝图](../docs/10-实战产品蓝图/README.md)（BootMall「云市商城」）的**实现载体**：每学完一个阶段，按蓝图的「业务场景 × 技术方案」映射表往这里落一块功能。当前进度：**用户 CRUD、注册与 JWT 登录已就位**，下一步是 Bearer token 认证过滤器（见蓝图的 [M1 实践队列](../docs/10-实战产品蓝图/04-里程碑与当前计划.md)）。
+本工程是 [实战产品蓝图](../docs/10-实战产品蓝图/README.md)（BootMall「云市商城」）的**实现载体**：每学完一个阶段，按蓝图的「业务场景 × 技术方案」映射表往这里落一块功能。当前进度：**用户 CRUD、注册登录、JWT 认证与 RBAC 管理接口授权已就位**，下一步是 OpenAPI 与 M1 回归（见蓝图的 [M1 实践队列](../docs/10-实战产品蓝图/04-里程碑与当前计划.md)）。
 
 配套客户端位于仓库根目录：`admin-client/` 对应 B 端管理后台，`user-client/` 对应 C 端商城。两者均已初始化为独立 React + TypeScript + Vite 工程，但尚未接入本服务；B 端在 M1 认证与授权验收后接入，C 端在 M2 交易核心验收后接入。
 
@@ -18,6 +18,7 @@
 | MyBatis-Plus | 3.5.17（Boot 4 专用 starter + jsqlparser） | 阶段三第 2 讲（ORM） |
 | H2 | BOM 托管（嵌入式，免安装） | 阶段二 05 讲（「仿制数据库」） |
 | JJWT | 0.13.0 | M1-06（HS256 登录令牌） |
+| Spring Security | 7.0.0（由 Boot BOM 托管） | M1-07（无状态 JWT 认证） |
 | Maven | 3.9.16（**Maven Wrapper 自带，无需安装**） | 阶段二 02 讲（聚合工程范式） |
 
 ## 模块结构
@@ -76,8 +77,9 @@ mvnw.cmd -pl services/user-service spring-boot:run
 
 启动成功后控制台会打印 SQL（学习期特意打开），访问：
 
-- 接口：`http://localhost:8080/api/users`
-- H2 控制台：`http://localhost:8080/h2-console`（JDBC URL 填 `jdbc:h2:file:../../data/bootapp;MODE=MySQL`，用户 `sa`，密码留空——与 datasource 一致，相对服务模块工作目录）
+- 公开接口：`http://localhost:8080/api/auth/login`
+- 受保护接口：`http://localhost:8080/api/users/me`（需 `Authorization: Bearer <token>`）
+- H2 控制台：本地需要时先执行 `export H2_CONSOLE_ENABLED=true`，再访问 `http://localhost:8080/h2-console`（JDBC URL 填 `jdbc:h2:file:../../data/bootapp;MODE=MySQL`，用户 `sa`，密码留空——与 datasource 一致，相对服务模块工作目录）
 - 数据库文件：`boot-server/data/`（随工程走，可提交记录——学习期每次实验的库状态都留档，方便回看 diff 与回滚；**首次启动自动建表灌初始数据，data/ 已有数据则保留历史**）
 
 ## 接口一览
@@ -86,51 +88,32 @@ mvnw.cmd -pl services/user-service spring-boot:run
 
 | 方法 | 路径 | 说明 |
 |-|-|-|
-| GET | `/api/users` | 列表（自动过滤已逻辑删除） |
-| GET | `/api/users/page?page=1&size=10` | 分页 |
-| GET | `/api/users/by-name?name=xx` | 名称模糊查询 |
-| GET | `/api/users/{id}` | 详情（不存在返回 40400） |
-| POST | `/api/users` | 新增（body 传 JSON） |
-| PUT | `/api/users/{id}` | 更新 |
-| DELETE | `/api/users/{id}` | 逻辑删除（UPDATE deleted=1） |
+| GET | `/api/users/me` | 当前 JWT 对应的用户 ID（需认证） |
+| GET | `/api/users` | 列表（需认证，自动过滤已逻辑删除） |
+| GET | `/api/users/page?page=1&size=10` | 分页（需认证） |
+| GET | `/api/users/by-name?name=xx` | 名称模糊查询（需认证） |
+| GET | `/api/users/{id}` | 详情（需认证；不存在返回 40400） |
+| POST | `/api/users` | 新增（需认证，body 传 JSON） |
+| PUT | `/api/users/{id}` | 更新（需认证） |
+| DELETE | `/api/users/{id}` | 逻辑删除（需认证，UPDATE deleted=1） |
 | POST | `/api/auth/register` | 注册用户并默认绑定 USER 角色 |
 | POST | `/api/auth/login` | 校验用户名和密码，返回短期 JWT |
 
 ## 接口验证（curl）
 
 ```bash
-# 列表（首次启动返回 3 条初始数据；data/ 已有历史则返回当前数据）
-curl http://localhost:8080/api/users
-
-# 分页
-curl "http://localhost:8080/api/users/page?page=1&size=2"
-
-# 按名称模糊查询
-curl "http://localhost:8080/api/users/by-name?name=Al"
-
-# 新增
-curl -X POST http://localhost:8080/api/users \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Dave","email":"dave@example.com","age":32}'
-
-# 更新
-curl -X PUT http://localhost:8080/api/users/1 \
-  -H "Content-Type: application/json" \
-  -d '{"age":26}'
-
-# 删除（逻辑删除：实际执行 UPDATE ... SET deleted=1）
-curl -X DELETE http://localhost:8080/api/users/1
-
-# 详情（删除后查返回 40400「用户不存在」）
-curl http://localhost:8080/api/users/1
-
-# 注册并登录（accessToken 是下一张 JWT 认证过滤器卡片要消费的 Bearer token）
+# 注册并登录，响应 data.accessToken 是访问受保护接口的 Bearer token
 curl -X POST http://localhost:8080/api/auth/register \
   -H "Content-Type: application/json" \
   -d '{"username":"dave","email":"dave@example.com","password":"secret123"}'
 curl -X POST http://localhost:8080/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"dave","password":"secret123"}'
+
+# 将登录响应中的 accessToken 复制为 TOKEN；无 token 访问 /api/users 会得到 401/40100
+TOKEN="替换为登录响应中的 accessToken"
+curl http://localhost:8080/api/users/me -H "Authorization: Bearer $TOKEN"
+curl http://localhost:8080/api/users -H "Authorization: Bearer $TOKEN"
 ```
 
 ## 与文档的对应关系（学到这里回来对照）

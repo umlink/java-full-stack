@@ -32,8 +32,9 @@ spring:
   h2:
     console:
       # 浏览器控制台：http://localhost:8080/h2-console
-      # JDBC URL 填上面 datasource.url 那一行，用户名 sa、密码留空
-      enabled: true
+      # 默认关闭，避免开发工具成为公开入口；本地学习时显式设置 H2_CONSOLE_ENABLED=true。
+      # 打开后 JDBC URL 填上面 datasource.url 那一行，用户名 sa、密码留空。
+      enabled: ${H2_CONSOLE_ENABLED:false}
 
 # ${JWT_SECRET_BASE64:} 表示优先读取环境变量，冒号后为空默认值；未配置时由 @NotBlank 拒绝启动。
 # 密钥不写入仓库；Base64 解码后必须至少有 32 字节才能用于 HS256。启动前：export JWT_SECRET_BASE64="$(openssl rand -base64 32)"

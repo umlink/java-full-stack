@@ -1,14 +1,17 @@
 package com.example.bootserver.controller;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.bootserver.common.result.Result;
 import com.example.bootserver.controller.dto.CreateUserRequest;
+import com.example.bootserver.controller.dto.UpdateUserRequest;
+import com.example.bootserver.controller.dto.UserPageRequest;
 import com.example.bootserver.entity.User;
 import com.example.bootserver.service.UserService;
 import jakarta.validation.Valid;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -36,30 +39,38 @@ public class UserController {
         this.userService = userService;
     }
 
+    /**
+     * 当前登录用户：GET /api/users/me。
+     *
+     * {@code @AuthenticationPrincipal} 从 SecurityContext 取出过滤器写入的 principal；本项目此阶段保存的是用户 ID。
+     * 该接口只验证“已认证可访问”，不要求后台管理权限；其余用户管理资源由 M1-08 的权限规则保护。
+     */
+    @GetMapping("/me")
+    public Result<Long> getCurrentUserId(@AuthenticationPrincipal Long userId) {
+        return Result.ok(userId);
+    }
+
     /** 列表：GET /api/users（/api 由 MVC 前缀配置提供） */
     @GetMapping
-    public Result<List<User>> list() {
-        return Result.ok(userService.list());
+    public Result<List<User>> listUsers() {
+        return Result.ok(userService.listUsers());
     }
 
     /** 分页：GET /api/users/page?page=1&size=10 */
     @GetMapping("/page")
-    public Result<Page<User>> page(@RequestParam(defaultValue = "1") long page,
-                                   @RequestParam(defaultValue = "10") long size) {
-        return Result.ok(userService.page(new Page<>(page, size)));
+    public Result<Page<User>> listUsersByPage(@Valid @ModelAttribute UserPageRequest request) {
+        return Result.ok(userService.listUsersByPage(request.getPage(), request.getSize()));
     }
 
     /** 按名称模糊查询（LambdaQueryWrapper 写法示例）：GET /api/users/by-name?name=xxx */
     @GetMapping("/by-name")
-    public Result<List<User>> byName(@RequestParam String name) {
-        List<User> users = userService.list(new LambdaQueryWrapper<User>()
-                .like(User::getName, name));
-        return Result.ok(users);
+    public Result<List<User>> searchUsersByName(@RequestParam String name) {
+        return Result.ok(userService.searchUsersByName(name));
     }
 
     /** 详情：GET /api/users/{id} */
     @GetMapping("/{id}")
-    public Result<User> get(@PathVariable Long id) {
+    public Result<User> getUserById(@PathVariable Long id) {
         return Result.ok(userService.getRequiredById(id));
     }
 
@@ -71,7 +82,7 @@ public class UserController {
      * 显式赋值比引入映射框架更直观，也能让读者看清哪些字段绝不能由客户端控制。
      */
     @PostMapping
-    public Result<Long> create(@Valid @RequestBody CreateUserRequest request) {
+    public Result<Long> createUser(@Valid @RequestBody CreateUserRequest request) {
         // User 的 id、deleted 和审计字段不从请求复制，分别交给数据库、框架和后续业务流程维护。
         User user = new User();
         user.setName(request.name());
@@ -92,26 +103,16 @@ public class UserController {
      * 在当前 MyBatis-Plus 默认字段策略下，实体中为 {@code null} 的普通字段通常不会出现在
      * UPDATE 的 SET 子句中，因此该请求不会主动覆盖 name 和 email。
      * <p>
-     * 这是 M0 保留的最小 CRUD 示例，仍直接接收 {@link User}。M1-01 只建立“创建”接口的
-     * DTO 边界，不提前改动更新接口；后续应为更新建立专用 DTO、参数校验和字段权限规则，
-     * 避免客户端尝试修改 {@code deleted} 等服务端字段。
+     * 请求体使用专用 DTO，只允许映射基础资料字段；账号状态、逻辑删除和审计字段均没有外部写入入口。
      */
     @PutMapping("/{id}")
-    public Result<Boolean> update(@PathVariable Long id, @RequestBody User user) {
-        // 先由 Service 确认目标资源存在；不存在会抛出业务异常并由全局处理器返回 404，而非成功响应中的 false。
-        userService.getRequiredById(id);
-
-        // 以路径 ID 为准，忽略请求体里可能携带的 id，防止调用方把更新目标悄悄换成另一条记录。
-        user.setId(id);
-
-        // updateById 使用实体主键生成 WHERE id = ?；资源存在性已在更新前确认，返回值保持原有的受影响行数语义。
-        boolean updated = userService.updateById(user);
-        return Result.ok(updated);
+    public Result<Boolean> updateUser(@PathVariable Long id, @Valid @RequestBody UpdateUserRequest request) {
+        return Result.ok(userService.updateUserProfile(id, request));
     }
 
     /** 删除（逻辑删除）：DELETE /api/users/{id} —— 实际执行 UPDATE t_user SET deleted=1 */
     @DeleteMapping("/{id}")
-    public Result<Boolean> delete(@PathVariable Long id) {
-        return Result.ok(userService.removeById(id));
+    public Result<Boolean> deleteUser(@PathVariable Long id) {
+        return Result.ok(userService.deleteUserById(id));
     }
 }

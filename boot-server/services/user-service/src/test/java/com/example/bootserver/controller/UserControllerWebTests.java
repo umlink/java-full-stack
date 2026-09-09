@@ -1,6 +1,7 @@
 package com.example.bootserver.controller;
 
 import com.example.bootserver.common.error.ErrorCode;
+import com.example.bootserver.controller.dto.UpdateUserRequest;
 import com.example.bootserver.entity.User;
 import com.example.bootserver.exception.UserNotFoundException;
 import com.example.bootserver.handler.GlobalExceptionHandler;
@@ -13,7 +14,6 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -123,33 +123,32 @@ class UserControllerWebTests {
     }
 
     @Test
-    void updateUsesPathIdAfterConfirmingTargetExists() throws Exception {
-        User existingUser = new User();
-        existingUser.setId(1L);
-        when(userService.getRequiredById(1L)).thenReturn(existingUser);
-        when(userService.updateById(any(User.class))).thenAnswer(invocation -> {
-            User update = invocation.getArgument(0);
-            assertThat(update.getId()).isEqualTo(1L);
-            assertThat(update.getAge()).isEqualTo(26);
-            return true;
-        });
+    void updateUsesDtoAllowlistAndPathId() throws Exception {
+        when(userService.updateUserProfile(org.mockito.ArgumentMatchers.eq(1L), any(UpdateUserRequest.class)))
+                .thenAnswer(invocation -> {
+                    UpdateUserRequest request = invocation.getArgument(1);
+                    assertThat(request.age()).isEqualTo(26);
+                    assertThat(request.name()).isNull();
+                    assertThat(request.email()).isNull();
+                    return true;
+                });
 
         mockMvc.perform(put("/users/1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"id":999,"age":26}
+                                {"id":999,"status":0,"deleted":1,"age":26}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data").value(true));
 
-        verify(userService).getRequiredById(1L);
-        verify(userService).updateById(any(User.class));
+        verify(userService).updateUserProfile(org.mockito.ArgumentMatchers.eq(1L), any(UpdateUserRequest.class));
     }
 
     @Test
     void updateReturnsNotFoundWithoutExecutingUpdateWhenTargetIsMissing() throws Exception {
-        when(userService.getRequiredById(404L)).thenThrow(new UserNotFoundException());
+        when(userService.updateUserProfile(org.mockito.ArgumentMatchers.eq(404L), any(UpdateUserRequest.class)))
+                .thenThrow(new UserNotFoundException());
 
         mockMvc.perform(put("/users/404")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -160,8 +159,43 @@ class UserControllerWebTests {
                 .andExpect(jsonPath("$.code").value(ErrorCode.NOT_FOUND.getCode()))
                 .andExpect(jsonPath("$.message").value("用户不存在"));
 
-        verify(userService).getRequiredById(404L);
-        verify(userService, never()).updateById(any(User.class));
+        verify(userService).updateUserProfile(org.mockito.ArgumentMatchers.eq(404L), any(UpdateUserRequest.class));
+    }
+
+    @Test
+    void updateRejectsRequestWithoutAllowedFieldsBeforeCallingService() throws Exception {
+        mockMvc.perform(put("/users/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":0,\"deleted\":1}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.PARAMETER_ERROR.getCode()))
+                .andExpect(jsonPath("$.message").value("至少提供一个可更新字段"));
+
+        verifyNoInteractions(userService);
+    }
+
+    @Test
+    void pageRejectsOutOfRangeParametersBeforeCallingService() throws Exception {
+        mockMvc.perform(get("/users/page")
+                        .param("page", "0")
+                        .param("size", "10"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.PARAMETER_ERROR.getCode()))
+                .andExpect(jsonPath("$.message").value("页码必须大于 0"));
+
+        verifyNoInteractions(userService);
+    }
+
+    @Test
+    void pageRejectsSizeAboveMaximumBeforeCallingService() throws Exception {
+        mockMvc.perform(get("/users/page")
+                        .param("page", "1")
+                        .param("size", "101"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.PARAMETER_ERROR.getCode()))
+                .andExpect(jsonPath("$.message").value("每页数量不能超过 100"));
+
+        verifyNoInteractions(userService);
     }
 
     private void assertInvalidCreateRequest(String requestBody, String expectedMessage) throws Exception {

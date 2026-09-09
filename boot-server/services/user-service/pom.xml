@@ -46,12 +46,10 @@
             <artifactId>mybatis-plus-jsqlparser</artifactId>
         </dependency>
 
-        <!-- 只引入密码学工具，不引入完整 Spring Security 过滤器链。
-             BCryptPasswordEncoder 由 spring-security-crypto 提供，版本由 Spring Boot BOM 托管；
-             M1-06 登录校验同一 Hash 时继续复用它。 -->
+        <!-- Security Starter 同时提供 BCrypt 与 Servlet 过滤器链；版本由 Spring Boot BOM 托管。 -->
         <dependency>
-            <groupId>org.springframework.security</groupId>
-            <artifactId>spring-security-crypto</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
 
         <!-- JWT：API 在编译期可见，实现与 Jackson 序列化器只在运行时装载。 -->

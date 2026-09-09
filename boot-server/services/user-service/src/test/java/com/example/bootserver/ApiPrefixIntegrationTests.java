@@ -32,8 +32,9 @@ class ApiPrefixIntegrationTests {
         HttpResponse<String> prefixedResponse = get("/api/users");
         HttpResponse<String> unprefixedResponse = get("/users");
 
-        assertThat(prefixedResponse.statusCode()).isEqualTo(200);
-        assertThat(prefixedResponse.body()).contains("\"code\":0");
+        // M1-07 后，/api/users 是受保护资源；前缀正确不代表可绕过认证。
+        assertThat(prefixedResponse.statusCode()).isEqualTo(401);
+        assertThat(prefixedResponse.body()).contains("\"code\":40100");
         assertThat(unprefixedResponse.statusCode()).isEqualTo(404);
     }
 
