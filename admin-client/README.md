@@ -8,6 +8,30 @@ BootMall B 端管理后台，技术栈为 React 19、TypeScript、Vite、Tailwin
 
 已有后端接口文档：`http://localhost:8080/api/swagger-ui/index.html`。开发时通过 `VITE_API_BASE_URL` 指向 `http://localhost:8080/api`，不要在页面中硬编码地址。
 
+## 目录结构
+
+```text
+src/
+  pages/       路由页面，每个页面独立目录
+  layouts/     管理后台等可复用页面框架
+  providers/   全局 Provider 组合
+  components/  shadcn/ui 等跨页面基础组件
+  hooks/       跨页面 React Hook
+  lib/         HTTP、鉴权、工具函数等基础能力
+```
+
+页面组织约定：
+
+```text
+pages/
+  Users/
+    index.tsx
+    components/
+    useUsersService.ts
+```
+
+`components/ui` 保持为 shadcn 组件落点；路由页面以 `pages/<PageName>/index.tsx` 暴露；页面私有组件放入当前页面的 `components/`；页面私有请求与状态编排需要时再新增 `useXxxService.ts`。自有 React 组件文件使用 PascalCase，例如 `layouts/AdminLayout.tsx`、`providers/AppProvider.tsx`；Hook 文件使用 `useXxx.ts`。页面框架放入 `layouts/`；全局组合逻辑放入 `providers/`，避免 `main.tsx` 和页面组件承担全局装配职责。
+
 ## 命令
 
 ```bash
@@ -18,4 +42,4 @@ npm run lint
 npm run build
 ```
 
-前端目录、请求、认证与验收规范见仓库根目录 [AGENTS.md](../AGENTS.md)。
+前端目录、命名、请求、认证与验收规范见仓库根目录 [AGENTS.md](../AGENTS.md) 与 [前端开发规范](../docs/10-实战产品蓝图/前端开发规范.md)。

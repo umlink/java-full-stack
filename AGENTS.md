@@ -106,9 +106,13 @@ docs/               学习路线、产品蓝图和实践卡片
 
 - `admin-client` 和 `user-client` 均使用 React 19、TypeScript、Vite、Tailwind CSS 4 与 shadcn/ui；先复用已有组件、主题和 `cn` 工具，新增 UI 组件优先通过 shadcn CLI 引入，不复制第三方源码。
 - 只要 shadcn/ui 已提供对应语义组件（例如 `Button`、`Input`、`Label`、`Card`、`Avatar`、`Badge`、`Skeleton`、`Sidebar`、`Dialog`），页面必须使用它；Tailwind 只负责页面编排和组件无法表达的局部布局，禁止手写同类基础控件替代组件。
-- 按业务切分 `src/features/<feature>/`，跨页面组件放 `src/components/`，HTTP 与鉴权等基础能力放 `src/lib/`；页面组件以 `Page` 结尾，路由守卫以 `Route` 结尾，接口输入输出类型以 `Request`、`Response` 结尾。
+- 路由页面统一放入 `src/pages/<PageName>/index.tsx`，页面目录使用 PascalCase，例如 `pages/Login/index.tsx`、`pages/Users/index.tsx`；禁止再新增 `src/features/` 或把路由页面平铺为 `users-page.tsx`。
+- 页面私有组件放入当前页面的 `components/`，组件文件使用 PascalCase，例如 `pages/Users/components/UserTable.tsx`；页面私有请求、状态编排和事件流程需要抽离时，命名为 `useXxxService.ts`，例如 `pages/Users/useUsersService.ts`。
+- 自有 React 组件文件使用 PascalCase，例如 `layouts/AdminLayout.tsx`、`providers/AppProvider.tsx`；Hook 文件使用 `useXxx.ts`；普通工具、HTTP 客户端和会话模块使用 lowerCamelCase。`components/ui` 是 shadcn CLI 的生成落点，保留其小写文件命名，不手工改成 PascalCase。
+- 跨页面组件放 `src/components/`，HTTP、鉴权、错误转换、存储封装等基础能力放 `src/lib/`；接口输入输出类型以 `Request`、`Response` 结尾，路由守卫组件以 `Route` 结尾。
 - 需要多页面导航时使用 React Router；路由表集中维护，受保护页面必须显式包裹认证守卫。不要在按钮点击事件中散落 `window.location` 跳转，也不要在组件内猜测当前 URL。
 - B 端优先实现紧凑、可扫描的管理界面：清晰导航、表格与筛选、加载/空/错误/无权限状态齐全。图标按钮使用 Lucide 并提供可访问名称；不为后台工具添加营销式首屏或装饰卡片。
+- 前端完整工程规范见 [前端开发规范](docs/10-实战产品蓝图/前端开发规范.md)；该文档与本节冲突时，以本节的强制规则为准。
 
 ### HTTP、认证与状态
 
