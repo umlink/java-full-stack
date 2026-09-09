@@ -142,7 +142,7 @@ boot-app 实操的正确打开方式：
 ⑤ 复：进入下一阶段前，让 AI 抽查上一阶段（间隔重复）
 ```
 
-各文件的角色：[docs/](docs/README.md) 是教材、[实战产品蓝图](docs/10-实战产品蓝图.md) 是练习册目录、[boot-app](boot-app/README.md) 是操场、[CLAUDE.md](CLAUDE.md) 是给 AI 立的规矩、[学习时间规划](docs/学习时间规划.md) 是日程表、本文是用法说明书。
+各文件的角色：[docs/](docs/README.md) 是教材、[实战产品蓝图](docs/10-实战产品蓝图/README.md) 是练习册目录、[boot-app](boot-app/README.md) 是操场、[CLAUDE.md](CLAUDE.md) 是给 AI 立的规矩、[学习时间规划](docs/学习时间规划.md) 是日程表、本文是用法说明书。
 
 ---
 

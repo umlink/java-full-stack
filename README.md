@@ -53,6 +53,8 @@
 
 ```
 java-full-stack/
+├── admin-client/                     # B 端管理后台：React + TypeScript + Vite
+├── user-client/                      # C 端商城：React + TypeScript + Vite
 ├── boot-app/                         # 配套实操工程：Spring Boot 4 多模块 + H2 + MyBatis-Plus
 ├── docs/
 │   ├── 专有名词速查表.md                  # 名词速查（学习伴侣）
@@ -67,7 +69,7 @@ java-full-stack/
 │   ├── 07-阶段七-全栈融合与项目实战/           # 阶段 7：全栈实战
 │   ├── 08-阶段八-数据库专家/                  # 阶段 8：数据库专家
 │   ├── 09-配套学习资源清单.md                 # 书籍 / 课程 / 文档资源
-│   └── 10-实战产品蓝图.md                    # BootMall 贯穿实战：业务场景 × 技术方案映射
+│   └── 10-实战产品蓝图/                      # BootMall 贯穿实战：分主题蓝图与实践计划
 ├── LICENSE                                   # MIT 许可证
 ├── CLAUDE.md                                 # AI 协作规范（文档写作 / 工程红线）
 ├── LEARNING.md                               # AI 协助式学习方法论（陪练式学习六模式）
@@ -108,7 +110,7 @@ cd boot-app
 
 - **先读方法**：花 10 分钟读 [LEARNING.md](LEARNING.md)——AI 协助式学习的六种模式（追问式提问 / 苏格拉底 / 费曼 / 出题官 / Code Review / 卡点日志）与防 AI 依赖指南；
 - **先盘点，再上路**：从「阶段 0 起点盘点」开始，明确自己「无需重学」与「必须重学」的部分；
-- **边学边实现**：按 [实战产品蓝图](docs/10-实战产品蓝图.md)（BootMall 云市商城）把每个阶段学到的技术落进 [boot-app](boot-app/README.md)——每个技术点都挂在真实业务场景上；
+- **边学边实现**：按 [实战产品蓝图](docs/10-实战产品蓝图/README.md)（BootMall 云市商城）把每个阶段学到的技术落进 [boot-app](boot-app/README.md)——每个技术点都挂在真实业务场景上；
 - **一段一自检**：每完成一个阶段，对照该阶段末尾的「本节自检」清单做能力自检；
 - **时间弹性**：主线约 9 个半月，时间不足可拉长周期，保持阶段间复盘即可。
 

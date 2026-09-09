@@ -1,17 +1,41 @@
 # ===== Java / Maven =====
 target/
 *.class
+*.hprof
+hs_err_pid*
+replay_pid*
 
-# ===== IDE =====
+# ===== H2 运行时文件 =====
+# 保留 .mv.db 学习数据快照；锁与追踪文件不应提交。
+boot-app/data/*.lock.db
+boot-app/data/*.trace.db
+
+# ===== 前端构建与测试产物 =====
+**/node_modules/
+**/dist/
+**/dist-ssr/
+**/.vite/
+**/coverage/
+**/playwright-report/
+**/test-results/
+**/*.tsbuildinfo
+**/.eslintcache
+
+# ===== 本地环境与日志 =====
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.local
+*.log
+logs/
+
+# ===== IDE / 系统 =====
 .idea/
 *.iml
 .vscode/
 .settings/
 .classpath
 .project
-
-# ===== 日志 / 系统 =====
-*.log
-logs/
 .DS_Store
 Thumbs.db

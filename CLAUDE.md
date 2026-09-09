@@ -58,4 +58,4 @@
 
 ## 常用链接
 
-- 学习入口：`docs/README.md` ｜ 工程说明：`boot-app/README.md` ｜ 阶段零起点：`docs/00-阶段零-起点盘点与补课/01-能力迁移对照.md` ｜ 实战路线：`docs/10-实战产品蓝图.md` ｜ AI 协助式学习方法论：`LEARNING.md`
+- 学习入口：`docs/README.md` ｜ 工程说明：`boot-app/README.md` ｜ 阶段零起点：`docs/00-阶段零-起点盘点与补课/01-能力迁移对照.md` ｜ 实战路线：`docs/10-实战产品蓝图/README.md` ｜ AI 协助式学习方法论：`LEARNING.md`
