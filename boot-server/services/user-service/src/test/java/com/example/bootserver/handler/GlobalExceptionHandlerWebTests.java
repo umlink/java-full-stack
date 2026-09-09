@@ -5,6 +5,7 @@ import com.example.bootserver.common.error.ErrorCode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -51,6 +52,14 @@ class GlobalExceptionHandlerWebTests {
                 .andExpect(jsonPath("$.data").doesNotExist());
     }
 
+    @Test
+    void duplicateKeyExceptionUsesConflictContract() throws Exception {
+        mockMvc.perform(get("/test/errors/duplicate-key"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ErrorCode.CONFLICT.getCode()))
+                .andExpect(jsonPath("$.message").value(ErrorCode.CONFLICT.getMessage()));
+    }
+
     @RestController
     @RequestMapping("/test/errors")
     static class FailingController {
@@ -63,6 +72,11 @@ class GlobalExceptionHandlerWebTests {
         @GetMapping("/unexpected")
         void unexpected() {
             throw new IllegalStateException("internal secret");
+        }
+
+        @GetMapping("/duplicate-key")
+        void duplicateKey() {
+            throw new DuplicateKeyException("database constraint detail must not reach client");
         }
     }
 }

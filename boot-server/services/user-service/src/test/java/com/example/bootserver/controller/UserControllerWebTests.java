@@ -97,12 +97,15 @@ class UserControllerWebTests {
         User user = new User();
         user.setId(1L);
         user.setName("Alice");
+        user.setPasswordHash("$2a$10$never-return-this-hash-to-client");
         when(userService.getRequiredById(1L)).thenReturn(user);
 
         mockMvc.perform(get("/users/1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data.id").value(1));
+                .andExpect(jsonPath("$.data.id").value(1))
+                // 回归保护：User 会直接作为查询响应 data，密码哈希必须在序列化层被排除。
+                .andExpect(jsonPath("$.data.passwordHash").doesNotExist());
 
         verify(userService).getRequiredById(1L);
     }

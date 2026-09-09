@@ -37,9 +37,29 @@ class ApiPrefixIntegrationTests {
         assertThat(unprefixedResponse.statusCode()).isEqualTo(404);
     }
 
+    @Test
+    void registerEndpointIsOnlyAvailableThroughConfiguredApiPrefix() throws Exception {
+        String body = "{\"username\":\"prefix-user\",\"email\":\"prefix-user@example.com\",\"password\":\"secret123\"}";
+
+        HttpResponse<String> prefixedResponse = postJson("/api/auth/register", body);
+        HttpResponse<String> unprefixedResponse = postJson("/auth/register", body);
+
+        assertThat(prefixedResponse.statusCode()).isEqualTo(200);
+        assertThat(prefixedResponse.body()).contains("\"code\":0");
+        assertThat(unprefixedResponse.statusCode()).isEqualTo(404);
+    }
+
     private HttpResponse<String> get(String path) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
                 .GET()
+                .build();
+        return HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> postJson(String path, String body) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
         return HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
     }

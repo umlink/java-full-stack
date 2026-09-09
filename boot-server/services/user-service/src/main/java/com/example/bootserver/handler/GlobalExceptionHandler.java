@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -29,6 +30,17 @@ public class GlobalExceptionHandler {
         // 这是预期失败：业务层已给出稳定分类和受控提示，可安全返回给客户端。
         ErrorCode errorCode = exception.getErrorCode();
         return failure(errorCode, exception.getMessage());
+    }
+
+    /**
+     * 数据库唯一键是并发场景下防重复的最后防线。
+     *
+     * 业务预检查同时通过时，后一个事务仍可能在 INSERT 时触发此异常；统一转为冲突，
+     * 避免客户端把可预期的重复注册误判为系统故障。
+     */
+    @ExceptionHandler(DuplicateKeyException.class)
+    public ResponseEntity<Result<Void>> handleDuplicateKeyException(DuplicateKeyException exception) {
+        return failure(ErrorCode.CONFLICT, ErrorCode.CONFLICT.getMessage());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

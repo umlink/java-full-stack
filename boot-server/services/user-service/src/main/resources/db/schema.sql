@@ -7,14 +7,30 @@
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS t_user (
-    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
-    name        VARCHAR(64)  NOT NULL,
-    email       VARCHAR(128) NOT NULL,
-    age         INT          NULL,
-    deleted     TINYINT      NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 正常 / 1 已删除',
-    create_time TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    update_time TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+    id            BIGINT AUTO_INCREMENT PRIMARY KEY,
+    -- 注册登录名：老 M0 创建的表格没有该列，因此允许为 NULL，不破坏已有创建行为
+    username      VARCHAR(64)  NULL,
+    name          VARCHAR(64)  NOT NULL,
+    email         VARCHAR(128) NOT NULL,
+    -- 只保存 BCrypt 单向哈希（约 60 字符），绝不存明文；M0 旧数据无密码为 NULL
+    password_hash VARCHAR(128) NULL COMMENT 'BCrypt 哈希，严禁明文',
+    -- 账号状态：1 正常 / 0 禁用；注册默认 1，字段冗余于 deleted 是保留状态机的扩展位
+    status        TINYINT      NOT NULL DEFAULT 1 COMMENT '账号状态：1 正常 / 0 禁用',
+    age           INT          NULL,
+    deleted       TINYINT      NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 正常 / 1 已删除',
+    create_time   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- 用户名/邮箱唯一：业务层预检查拦常规重复，这里是并发或绕过业务检查时的最后防线
+    CONSTRAINT uk_user_username UNIQUE (username),
+    CONSTRAINT uk_user_email UNIQUE (email)
 );
+
+-- 兼容已有库：老库 t_user 没有注册字段与唯一约束，用 IF NOT EXISTS 增量补齐且可重复执行
+ALTER TABLE t_user ADD COLUMN IF NOT EXISTS username VARCHAR(64) NULL;
+ALTER TABLE t_user ADD COLUMN IF NOT EXISTS password_hash VARCHAR(128) NULL;
+ALTER TABLE t_user ADD COLUMN IF NOT EXISTS status TINYINT NOT NULL DEFAULT 1;
+ALTER TABLE t_user ADD CONSTRAINT IF NOT EXISTS uk_user_username UNIQUE (username);
+ALTER TABLE t_user ADD CONSTRAINT IF NOT EXISTS uk_user_email UNIQUE (email);
 
 -- 初始数据：仅当 t_user 为空时插入（H2 支持 INSERT ... SELECT ... WHERE NOT EXISTS）
 -- 注意：首支 SELECT 必须给列起别名，否则 H2 对多支 UNION 的同名表达式列（CURRENT_TIMESTAMP）报「重名列」
