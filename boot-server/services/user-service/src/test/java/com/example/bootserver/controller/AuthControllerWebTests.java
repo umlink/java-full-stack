@@ -2,8 +2,12 @@ package com.example.bootserver.controller;
 
 import com.example.bootserver.common.error.ErrorCode;
 import com.example.bootserver.common.error.BusinessException;
+import com.example.bootserver.controller.dto.LoginRequest;
+import com.example.bootserver.controller.dto.LoginResponse;
 import com.example.bootserver.controller.dto.RegisterRequest;
+import com.example.bootserver.entity.User;
 import com.example.bootserver.handler.GlobalExceptionHandler;
+import com.example.bootserver.security.JwtTokenService;
 import com.example.bootserver.service.UserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,12 +32,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AuthControllerWebTests {
 
     private final UserService userService = mock(UserService.class);
+    private final JwtTokenService jwtTokenService = mock(JwtTokenService.class);
 
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(new AuthController(userService))
+        mockMvc = MockMvcBuilders.standaloneSetup(new AuthController(userService, jwtTokenService))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }
@@ -93,6 +98,51 @@ class AuthControllerWebTests {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value(ErrorCode.CONFLICT.getCode()))
                 .andExpect(jsonPath("$.message").value("用户名已注册"));
+    }
+
+    @Test
+    void loginReturnsAccessTokenForCorrectCredentials() throws Exception {
+        User user = new User();
+        user.setId(300L);
+        LoginResponse loginResponse = new LoginResponse("signed.jwt.token", java.time.Instant.parse("2026-09-09T12:30:00Z"));
+        when(userService.authenticate(any(LoginRequest.class))).thenAnswer(invocation -> {
+            LoginRequest request = invocation.getArgument(0);
+            assertThat(request.username()).isEqualTo("dave");
+            assertThat(request.password()).isEqualTo("secret123");
+            return user;
+        });
+        when(jwtTokenService.issueAccessToken(300L)).thenReturn(loginResponse);
+
+        mockMvc.perform(post("/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"username":"dave","password":"secret123"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.accessToken").value("signed.jwt.token"))
+                .andExpect(jsonPath("$.data.expiresAt").value("2026-09-09T12:30:00Z"));
+
+        verify(userService).authenticate(any(LoginRequest.class));
+        verify(jwtTokenService).issueAccessToken(300L);
+    }
+
+    @Test
+    void loginUsesSameUnauthorizedContractForInvalidCredentials() throws Exception {
+        when(userService.authenticate(any(LoginRequest.class)))
+                .thenThrow(new BusinessException(ErrorCode.UNAUTHORIZED, "用户名或密码错误"));
+
+        mockMvc.perform(post("/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"username":"missing-user","password":"wrong-password"}
+                                """))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(ErrorCode.UNAUTHORIZED.getCode()))
+                .andExpect(jsonPath("$.message").value("用户名或密码错误"));
+
+        // 未认证就不签发令牌，避免失败路径意外产生可被误用的凭据。
+        verifyNoInteractions(jwtTokenService);
     }
 
     @Test

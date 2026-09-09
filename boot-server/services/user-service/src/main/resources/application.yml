@@ -35,6 +35,14 @@ spring:
       # JDBC URL 填上面 datasource.url 那一行，用户名 sa、密码留空
       enabled: true
 
+# ${JWT_SECRET_BASE64:} 表示优先读取环境变量，冒号后为空默认值；未配置时由 @NotBlank 拒绝启动。
+# 密钥不写入仓库；Base64 解码后必须至少有 32 字节才能用于 HS256。启动前：export JWT_SECRET_BASE64="$(openssl rand -base64 32)"
+app:
+  jwt:
+    secret-base64: ${JWT_SECRET_BASE64:}
+    # Spring Boot 用 Duration 绑定该值；改配置即可调整新签发令牌的有效期。
+    access-token-ttl: PT30M
+
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true

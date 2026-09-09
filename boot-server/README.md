@@ -1,6 +1,6 @@
 # boot-server：与学习文档配套的 Spring Boot 4 多模块工程
 
-本工程是 [实战产品蓝图](../docs/10-实战产品蓝图/README.md)（BootMall「云市商城」）的**实现载体**：每学完一个阶段，按蓝图的「业务场景 × 技术方案」映射表往这里落一块功能。当前进度：**用户域 CRUD 已就位**（阶段零/二落点），下一步是 Security + JWT 登录（见蓝图的 [M1 实践队列](../docs/10-实战产品蓝图/04-里程碑与当前计划.md)）。
+本工程是 [实战产品蓝图](../docs/10-实战产品蓝图/README.md)（BootMall「云市商城」）的**实现载体**：每学完一个阶段，按蓝图的「业务场景 × 技术方案」映射表往这里落一块功能。当前进度：**用户 CRUD、注册与 JWT 登录已就位**，下一步是 Bearer token 认证过滤器（见蓝图的 [M1 实践队列](../docs/10-实战产品蓝图/04-里程碑与当前计划.md)）。
 
 配套客户端位于仓库根目录：`admin-client/` 对应 B 端管理后台，`user-client/` 对应 C 端商城。两者均已初始化为独立 React + TypeScript + Vite 工程，但尚未接入本服务；B 端在 M1 认证与授权验收后接入，C 端在 M2 交易核心验收后接入。
 
@@ -17,6 +17,7 @@
 | Spring Boot | 4.0.0 | 阶段二 02 讲（BOM 示例同款） |
 | MyBatis-Plus | 3.5.17（Boot 4 专用 starter + jsqlparser） | 阶段三第 2 讲（ORM） |
 | H2 | BOM 托管（嵌入式，免安装） | 阶段二 05 讲（「仿制数据库」） |
+| JJWT | 0.13.0 | M1-06（HS256 登录令牌） |
 | Maven | 3.9.16（**Maven Wrapper 自带，无需安装**） | 阶段二 02 讲（聚合工程范式） |
 
 ## 模块结构
@@ -46,7 +47,13 @@ boot-server/
 
 ## 快速开始
 
-**环境要求（只需一件：JDK 25）**：本仓库自带 **Maven Wrapper**（`mvnw` / `mvnw.cmd`）——**不需要安装 Maven**，wrapper 会自动下载 Maven 3.9.16 到你的用户目录。唯一前置是 JDK 25（LTS，Temurin / Corretto 均可），装好确认 `java -version` 输出 25 即可。任何电脑 clone 下来都能跑，无本机环境绑定。
+**环境要求**：JDK 25 与一个运行时 JWT 密钥。本仓库自带 **Maven Wrapper**（`mvnw` / `mvnw.cmd`），不需要安装 Maven。启动前生成一次本机密钥（不提交）：
+
+```bash
+export JWT_SECRET_BASE64="$(openssl rand -base64 32)"
+```
+
+密钥通过环境变量注入，缺失时应用会在启动阶段拒绝运行；测试使用独立假密钥，不依赖本机环境变量。
 
 **方式一：IDEA（推荐）**
 1. `File → Open` 选择 `boot-server/pom.xml`，以 Maven 工程打开（IDEA 自动识别 wrapper 与 JDK）
@@ -86,6 +93,8 @@ mvnw.cmd -pl services/user-service spring-boot:run
 | POST | `/api/users` | 新增（body 传 JSON） |
 | PUT | `/api/users/{id}` | 更新 |
 | DELETE | `/api/users/{id}` | 逻辑删除（UPDATE deleted=1） |
+| POST | `/api/auth/register` | 注册用户并默认绑定 USER 角色 |
+| POST | `/api/auth/login` | 校验用户名和密码，返回短期 JWT |
 
 ## 接口验证（curl）
 
@@ -114,6 +123,14 @@ curl -X DELETE http://localhost:8080/api/users/1
 
 # 详情（删除后查返回 40400「用户不存在」）
 curl http://localhost:8080/api/users/1
+
+# 注册并登录（accessToken 是下一张 JWT 认证过滤器卡片要消费的 Bearer token）
+curl -X POST http://localhost:8080/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"username":"dave","email":"dave@example.com","password":"secret123"}'
+curl -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"dave","password":"secret123"}'
 ```
 
 ## 与文档的对应关系（学到这里回来对照）

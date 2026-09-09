@@ -49,6 +49,21 @@ class ApiPrefixIntegrationTests {
         assertThat(unprefixedResponse.statusCode()).isEqualTo(404);
     }
 
+    @Test
+    void loginEndpointIssuesTokenOnlyThroughConfiguredApiPrefix() throws Exception {
+        String registration = "{\"username\":\"login-prefix-user\",\"email\":\"login-prefix-user@example.com\",\"password\":\"secret123\"}";
+        HttpResponse<String> registerResponse = postJson("/api/auth/register", registration);
+        assertThat(registerResponse.statusCode()).isEqualTo(200);
+
+        String login = "{\"username\":\"login-prefix-user\",\"password\":\"secret123\"}";
+        HttpResponse<String> prefixedResponse = postJson("/api/auth/login", login);
+        HttpResponse<String> unprefixedResponse = postJson("/auth/login", login);
+
+        assertThat(prefixedResponse.statusCode()).isEqualTo(200);
+        assertThat(prefixedResponse.body()).contains("\"code\":0", "\"accessToken\"");
+        assertThat(unprefixedResponse.statusCode()).isEqualTo(404);
+    }
+
     private HttpResponse<String> get(String path) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
                 .GET()

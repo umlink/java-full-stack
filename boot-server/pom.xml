@@ -25,6 +25,8 @@
         <spring-boot.version>4.0.0</spring-boot.version>
         <!-- MyBatis-Plus 3.5.9 起提供 Boot 4 专用 starter；分页插件的 jsqlparser 需单独引入 -->
         <mybatis-plus.version>3.5.17</mybatis-plus.version>
+        <!-- JWT 仅在 user-service 使用，版本仍由聚合父工程集中锁定。 -->
+        <jjwt.version>0.13.0</jjwt.version>
         <lombok.version>1.18.42</lombok.version>
         <maven-compiler-plugin.version>3.14.0</maven-compiler-plugin.version>
     </properties>
@@ -56,6 +58,22 @@
                 <groupId>com.example</groupId>
                 <artifactId>common-core</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+            <!-- JJWT 拆成 API、运行时实现与 JSON 处理三部分，避免业务模块各自锁版本。 -->
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-api</artifactId>
+                <version>${jjwt.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-impl</artifactId>
+                <version>${jjwt.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-jackson</artifactId>
+                <version>${jjwt.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

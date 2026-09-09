@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.example.bootserver.common.error.BusinessException;
 import com.example.bootserver.common.error.ErrorCode;
+import com.example.bootserver.controller.dto.LoginRequest;
 import com.example.bootserver.controller.dto.RegisterRequest;
 import com.example.bootserver.entity.Role;
 import com.example.bootserver.entity.User;
@@ -70,6 +71,24 @@ public class UserService extends ServiceImpl<UserMapper, User> {
     }
 
     /**
+     * 校验登录凭据，并返回通过认证的用户。
+     *
+     * 不论用户名不存在、密码不匹配还是账号停用，都返回同一未认证错误；否则攻击者可以通过
+     * 响应差异枚举哪些账号存在。密码比较必须交给 BCrypt 的 matches，不能直接比较哈希字符串。
+     */
+    public User authenticate(LoginRequest request) {
+        User user = lambdaQuery().eq(User::getUsername, request.username()).one();
+        if (user == null
+                || user.getPasswordHash() == null
+                || user.getStatus() == null
+                || user.getStatus() != User.STATUS_ACTIVE
+                || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+            throw invalidCredentials();
+        }
+        return user;
+    }
+
+    /**
      * 用户名唯一性校验：按稳定业务键查询已存在记录，重复即抛业务冲突。
      */
     private void assertUsernameAvailable(String username) {
@@ -77,6 +96,11 @@ public class UserService extends ServiceImpl<UserMapper, User> {
         if (count > 0) {
             throw new BusinessException(ErrorCode.CONFLICT, "用户名已注册");
         }
+    }
+
+    /** 登录失败统一使用受控文案，调用方不能据此判断用户名是否存在。 */
+    private BusinessException invalidCredentials() {
+        return new BusinessException(ErrorCode.UNAUTHORIZED, "用户名或密码错误");
     }
 
     /**
