@@ -65,6 +65,18 @@ class ApiPrefixIntegrationTests {
         assertThat(unprefixedResponse.statusCode()).isEqualTo(404);
     }
 
+    @Test
+    void openApiJsonAndSwaggerUiAreAvailableThroughConfiguredApiPrefix() throws Exception {
+        HttpResponse<String> apiDocs = get("/api/v3/api-docs");
+        HttpResponse<String> swaggerUi = get("/api/swagger-ui/index.html");
+
+        // SpringDoc 的资源也由 DispatcherServlet 提供，因此必须和业务接口一样经过 /api 前缀。
+        assertThat(apiDocs.statusCode()).isEqualTo(200);
+        assertThat(apiDocs.body()).contains("\"/auth/register\"", "\"/users\"", "\"bearerAuth\"");
+        assertThat(swaggerUi.statusCode()).isEqualTo(200);
+        assertThat(swaggerUi.body()).contains("Swagger UI");
+    }
+
     private HttpResponse<String> get(String path) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
                 .GET()

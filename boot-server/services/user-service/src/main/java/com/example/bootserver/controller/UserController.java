@@ -6,7 +6,11 @@ import com.example.bootserver.controller.dto.CreateUserRequest;
 import com.example.bootserver.controller.dto.UpdateUserRequest;
 import com.example.bootserver.controller.dto.UserPageRequest;
 import com.example.bootserver.entity.User;
+import com.example.bootserver.config.OpenApiConfig;
 import com.example.bootserver.service.UserService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -31,6 +35,8 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/users")
+@Tag(name = "用户管理", description = "个人身份自查与需要 user:manage 权限的后台用户管理接口")
+@SecurityRequirement(name = OpenApiConfig.BEARER_AUTHENTICATION)
 public class UserController {
 
     private final UserService userService;
@@ -46,30 +52,35 @@ public class UserController {
      * 该接口只验证“已认证可访问”，不要求后台管理权限；其余用户管理资源由 M1-08 的权限规则保护。
      */
     @GetMapping("/me")
+    @Operation(summary = "获取当前登录用户 ID", description = "任意有效 JWT 均可访问，仅返回认证主体 ID。")
     public Result<Long> getCurrentUserId(@AuthenticationPrincipal Long userId) {
         return Result.ok(userId);
     }
 
     /** 列表：GET /api/users（/api 由 MVC 前缀配置提供） */
     @GetMapping
+    @Operation(summary = "查询用户列表", description = "需要 user:manage 权限，按用户 ID 升序返回。")
     public Result<List<User>> listUsers() {
         return Result.ok(userService.listUsers());
     }
 
     /** 分页：GET /api/users/page?page=1&size=10 */
     @GetMapping("/page")
+    @Operation(summary = "分页查询用户", description = "需要 user:manage 权限；页码从 1 开始，每页最多 100 条。")
     public Result<Page<User>> listUsersByPage(@Valid @ModelAttribute UserPageRequest request) {
         return Result.ok(userService.listUsersByPage(request.getPage(), request.getSize()));
     }
 
     /** 按名称模糊查询（LambdaQueryWrapper 写法示例）：GET /api/users/by-name?name=xxx */
     @GetMapping("/by-name")
+    @Operation(summary = "按名称搜索用户", description = "需要 user:manage 权限，按用户 ID 升序返回匹配项。")
     public Result<List<User>> searchUsersByName(@RequestParam String name) {
         return Result.ok(userService.searchUsersByName(name));
     }
 
     /** 详情：GET /api/users/{id} */
     @GetMapping("/{id}")
+    @Operation(summary = "查询用户详情", description = "需要 user:manage 权限；用户不存在时返回 404/40400。")
     public Result<User> getUserById(@PathVariable Long id) {
         return Result.ok(userService.getRequiredById(id));
     }
@@ -82,6 +93,7 @@ public class UserController {
      * 显式赋值比引入映射框架更直观，也能让读者看清哪些字段绝不能由客户端控制。
      */
     @PostMapping
+    @Operation(summary = "创建用户", description = "需要 user:manage 权限；仅接受创建 DTO 中定义的字段。")
     public Result<Long> createUser(@Valid @RequestBody CreateUserRequest request) {
         // User 的 id、deleted 和审计字段不从请求复制，分别交给数据库、框架和后续业务流程维护。
         User user = new User();
@@ -106,12 +118,14 @@ public class UserController {
      * 请求体使用专用 DTO，只允许映射基础资料字段；账号状态、逻辑删除和审计字段均没有外部写入入口。
      */
     @PutMapping("/{id}")
+    @Operation(summary = "更新用户基础资料", description = "需要 user:manage 权限；仅允许更新姓名、邮箱和年龄。")
     public Result<Boolean> updateUser(@PathVariable Long id, @Valid @RequestBody UpdateUserRequest request) {
         return Result.ok(userService.updateUserProfile(id, request));
     }
 
     /** 删除（逻辑删除）：DELETE /api/users/{id} —— 实际执行 UPDATE t_user SET deleted=1 */
     @DeleteMapping("/{id}")
+    @Operation(summary = "逻辑删除用户", description = "需要 user:manage 权限；用户不存在时返回 404/40400。")
     public Result<Boolean> deleteUser(@PathVariable Long id) {
         return Result.ok(userService.deleteUserById(id));
     }

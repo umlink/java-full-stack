@@ -21,7 +21,7 @@
 | 06 | [登录接口与 JWT 签发](06-登录接口与JWT签发.md) | 已完成 | 05 |
 | 07 | [JWT 认证过滤器](07-JWT认证过滤器.md) | 已完成 | 06 |
 | 08 | [RBAC 管理接口授权](08-RBAC管理接口授权.md) | 已完成 | 07 |
-| 09 | [OpenAPI 与 M1 回归](09-OpenAPI与M1回归.md) | 待开始 | 08 |
+| 09 | [OpenAPI 与 M1 回归](09-OpenAPI与M1回归.md) | 已完成 | 08 |
 
 ## 进度记录
 
@@ -36,3 +36,4 @@
 | 2026-09-09 | M1-06 | 已完成 | `./mvnw clean test -pl services/user-service -am`：35 个测试通过；覆盖登录成功 JWT、错误凭据统一 401、用户 ID/过期时间声明、JWT 配置时长与真实 /api 路径 |
 | 2026-09-09 | M1-07 | 已完成 | `./mvnw -pl services/user-service -am test`：37 个测试通过；覆盖无 token、篡改 token、过期 token 的 401/40100，以及有效 token 恢复当前用户 ID |
 | 2026-09-09 | M1-08 | 已完成 | `./mvnw -pl services/user-service -am test`：41 个测试通过；覆盖管理接口的 401/40100、USER 的 403/40300 和 ADMIN 的 200/0 |
+| 2026-09-09 | M1-09 | 已完成 | `./mvnw -pl services/user-service -am test`：42 个测试通过；覆盖 OpenAPI JSON、Swagger UI 与 M1 关键安全分支回归 |

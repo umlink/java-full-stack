@@ -1,6 +1,6 @@
 # boot-server：与学习文档配套的 Spring Boot 4 多模块工程
 
-本工程是 [实战产品蓝图](../docs/10-实战产品蓝图/README.md)（BootMall「云市商城」）的**实现载体**：每学完一个阶段，按蓝图的「业务场景 × 技术方案」映射表往这里落一块功能。当前进度：**用户 CRUD、注册登录、JWT 认证与 RBAC 管理接口授权已就位**，下一步是 OpenAPI 与 M1 回归（见蓝图的 [M1 实践队列](../docs/10-实战产品蓝图/04-里程碑与当前计划.md)）。
+本工程是 [实战产品蓝图](../docs/10-实战产品蓝图/README.md)（BootMall「云市商城」）的**实现载体**：每学完一个阶段，按蓝图的「业务场景 × 技术方案」映射表往这里落一块功能。当前进度：**M1 的用户 CRUD、注册登录、JWT 认证、RBAC 管理接口授权与 OpenAPI 已完成**；下一步先拆分 M2 交易核心的实践卡片（见蓝图的 [当前计划](../docs/10-实战产品蓝图/04-里程碑与当前计划.md)）。
 
 配套客户端位于仓库根目录：`admin-client/` 对应 B 端管理后台，`user-client/` 对应 C 端商城。两者均已初始化为独立 React + TypeScript + Vite 工程，但尚未接入本服务；B 端在 M1 认证与授权验收后接入，C 端在 M2 交易核心验收后接入。
 
@@ -19,6 +19,7 @@
 | H2 | BOM 托管（嵌入式，免安装） | 阶段二 05 讲（「仿制数据库」） |
 | JJWT | 0.13.0 | M1-06（HS256 登录令牌） |
 | Spring Security | 7.0.0（由 Boot BOM 托管） | M1-07（无状态 JWT 认证） |
+| SpringDoc OpenAPI | 3.1.1 | M1-09（OpenAPI JSON + Swagger UI） |
 | Maven | 3.9.16（**Maven Wrapper 自带，无需安装**） | 阶段二 02 讲（聚合工程范式） |
 
 ## 模块结构
@@ -79,6 +80,7 @@ mvnw.cmd -pl services/user-service spring-boot:run
 
 - 公开接口：`http://localhost:8080/api/auth/login`
 - 受保护接口：`http://localhost:8080/api/users/me`（需 `Authorization: Bearer <token>`）
+- 接口文档：`http://localhost:8080/api/swagger-ui/index.html`（OpenAPI JSON：`http://localhost:8080/api/v3/api-docs`）
 - H2 控制台：本地需要时先执行 `export H2_CONSOLE_ENABLED=true`，再访问 `http://localhost:8080/h2-console`（JDBC URL 填 `jdbc:h2:file:../../data/bootapp;MODE=MySQL`，用户 `sa`，密码留空——与 datasource 一致，相对服务模块工作目录）
 - 数据库文件：`boot-server/data/`（随工程走，可提交记录——学习期每次实验的库状态都留档，方便回看 diff 与回滚；**首次启动自动建表灌初始数据，data/ 已有数据则保留历史**）
 
@@ -89,13 +91,13 @@ mvnw.cmd -pl services/user-service spring-boot:run
 | 方法 | 路径 | 说明 |
 |-|-|-|
 | GET | `/api/users/me` | 当前 JWT 对应的用户 ID（需认证） |
-| GET | `/api/users` | 列表（需认证，自动过滤已逻辑删除） |
-| GET | `/api/users/page?page=1&size=10` | 分页（需认证） |
-| GET | `/api/users/by-name?name=xx` | 名称模糊查询（需认证） |
-| GET | `/api/users/{id}` | 详情（需认证；不存在返回 40400） |
-| POST | `/api/users` | 新增（需认证，body 传 JSON） |
-| PUT | `/api/users/{id}` | 更新（需认证） |
-| DELETE | `/api/users/{id}` | 逻辑删除（需认证，UPDATE deleted=1） |
+| GET | `/api/users` | 列表（需 `user:manage`，自动过滤已逻辑删除） |
+| GET | `/api/users/page?page=1&size=10` | 分页（需 `user:manage`） |
+| GET | `/api/users/by-name?name=xx` | 名称模糊查询（需 `user:manage`） |
+| GET | `/api/users/{id}` | 详情（需 `user:manage`；不存在返回 40400） |
+| POST | `/api/users` | 新增（需 `user:manage`，body 传 JSON） |
+| PUT | `/api/users/{id}` | 更新（需 `user:manage`） |
+| DELETE | `/api/users/{id}` | 逻辑删除（需 `user:manage`，UPDATE deleted=1） |
 | POST | `/api/auth/register` | 注册用户并默认绑定 USER 角色 |
 | POST | `/api/auth/login` | 校验用户名和密码，返回短期 JWT |
 

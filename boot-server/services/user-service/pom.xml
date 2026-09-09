@@ -52,6 +52,12 @@
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
 
+        <!-- SpringDoc 自动从 Controller、DTO 和 Bean Validation 生成 OpenAPI，并提供 Swagger UI。 -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+        </dependency>
+
         <!-- JWT：API 在编译期可见，实现与 Jackson 序列化器只在运行时装载。 -->
         <dependency>
             <groupId>io.jsonwebtoken</groupId>

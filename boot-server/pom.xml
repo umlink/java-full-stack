@@ -27,6 +27,8 @@
         <mybatis-plus.version>3.5.17</mybatis-plus.version>
         <!-- JWT 仅在 user-service 使用，版本仍由聚合父工程集中锁定。 -->
         <jjwt.version>0.13.0</jjwt.version>
+        <!-- SpringDoc 3.x 与 Spring Boot 4.x 兼容，提供 OpenAPI JSON 与 Swagger UI。 -->
+        <springdoc.version>3.1.1</springdoc.version>
         <lombok.version>1.18.42</lombok.version>
         <maven-compiler-plugin.version>3.14.0</maven-compiler-plugin.version>
     </properties>
@@ -74,6 +76,12 @@
                 <groupId>io.jsonwebtoken</groupId>
                 <artifactId>jjwt-jackson</artifactId>
                 <version>${jjwt.version}</version>
+            </dependency>
+            <!-- Boot 4 使用 SpringDoc 3.x，Web MVC UI starter 自动注册 /v3/api-docs 与 Swagger UI。 -->
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+                <version>${springdoc.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

@@ -33,7 +33,9 @@ public class SecurityConfig {
                         .accessDeniedHandler(accessDeniedHandler))
                 .authorizeHttpRequests(authorize -> authorize
                         // 外部 URI 虽是 /api/auth/**，但 Security 匹配的是 DispatcherServlet 内部路径 /auth/**。
-                        .requestMatchers("/auth/**", "/h2-console/**", "/error").permitAll()
+                        // 接口契约用于开发联调；外部地址仍带 MVC 前缀 /api，Security 匹配内部路径。
+                        .requestMatchers("/auth/**", "/h2-console/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/error")
+                        .permitAll()
                         // 个人身份自查只需合法登录；放在 /users/** 前，避免被管理规则覆盖。
                         .requestMatchers("/users/me").authenticated()
                         // 用户资源属于后台管理面：创建、查询、更新、删除都必须具备稳定权限码。
