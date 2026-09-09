@@ -27,3 +27,65 @@ SELECT id, name, email, age, deleted, create_time, update_time FROM (
     SELECT 3 AS id, 'Charlie' AS name, 'charlie@example.com' AS email, 28 AS age, 0 AS deleted, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
 ) tmp
 WHERE NOT EXISTS (SELECT 1 FROM t_user);
+
+-- RBAC 最小模型：角色与权限分开维护，两张关联表表达多对多关系；当前只为后续认证授权准备数据。
+CREATE TABLE IF NOT EXISTS t_role (
+    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    code        VARCHAR(64) NOT NULL,
+    name        VARCHAR(64) NOT NULL,
+    create_time TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uk_role_code UNIQUE (code)
+);
+
+CREATE TABLE IF NOT EXISTS t_permission (
+    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    code        VARCHAR(64)  NOT NULL,
+    name        VARCHAR(128) NOT NULL,
+    create_time TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uk_permission_code UNIQUE (code)
+);
+
+CREATE TABLE IF NOT EXISTS t_user_role (
+    user_id BIGINT NOT NULL,
+    role_id BIGINT NOT NULL,
+    PRIMARY KEY (user_id, role_id),
+    CONSTRAINT fk_user_role_user FOREIGN KEY (user_id) REFERENCES t_user (id),
+    CONSTRAINT fk_user_role_role FOREIGN KEY (role_id) REFERENCES t_role (id)
+);
+
+CREATE TABLE IF NOT EXISTS t_role_permission (
+    role_id       BIGINT NOT NULL,
+    permission_id BIGINT NOT NULL,
+    PRIMARY KEY (role_id, permission_id),
+    CONSTRAINT fk_role_permission_role FOREIGN KEY (role_id) REFERENCES t_role (id),
+    CONSTRAINT fk_role_permission_permission FOREIGN KEY (permission_id) REFERENCES t_permission (id)
+);
+
+-- 每条初始记录以业务唯一键为守卫，脚本可在非空数据库上重复执行且不会覆盖学习数据。
+INSERT INTO t_role (code, name)
+SELECT 'ADMIN', '管理员'
+WHERE NOT EXISTS (SELECT 1 FROM t_role WHERE code = 'ADMIN');
+
+INSERT INTO t_role (code, name)
+SELECT 'USER', '普通用户'
+WHERE NOT EXISTS (SELECT 1 FROM t_role WHERE code = 'USER');
+
+INSERT INTO t_permission (code, name)
+SELECT 'user:read', '查看用户'
+WHERE NOT EXISTS (SELECT 1 FROM t_permission WHERE code = 'user:read');
+
+INSERT INTO t_permission (code, name)
+SELECT 'user:manage', '管理用户'
+WHERE NOT EXISTS (SELECT 1 FROM t_permission WHERE code = 'user:manage');
+
+-- 用业务编码查询关联主键，避免脚本依赖自增 ID；ADMIN 具备后续后台用户管理所需的最小权限。
+INSERT INTO t_role_permission (role_id, permission_id)
+SELECT role.id, permission.id
+FROM t_role role
+JOIN t_permission permission ON permission.code = 'user:manage'
+WHERE role.code = 'ADMIN'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM t_role_permission relation
+      WHERE relation.role_id = role.id AND relation.permission_id = permission.id
+  );

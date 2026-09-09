@@ -2,6 +2,7 @@ package com.example.bootserver.service;
 
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.example.bootserver.entity.User;
+import com.example.bootserver.exception.UserNotFoundException;
 import com.example.bootserver.mapper.UserMapper;
 import org.springframework.stereotype.Service;
 
@@ -13,4 +14,18 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class UserService extends ServiceImpl<UserMapper, User> {
+
+    /**
+     * 查询必须存在的用户。
+     *
+     * 查询结果为 {@code null} 时在业务层转换为用户域异常，Controller 因而只处理 HTTP 输入输出，
+     * 不会在各个接口重复判断资源缺失。
+     */
+    public User getRequiredById(Long id) {
+        User user = getById(id);
+        if (user == null) {
+            throw new UserNotFoundException();
+        }
+        return user;
+    }
 }

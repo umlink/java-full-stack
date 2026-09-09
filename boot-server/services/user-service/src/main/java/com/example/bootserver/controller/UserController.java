@@ -2,7 +2,6 @@ package com.example.bootserver.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.example.bootserver.common.error.ErrorCode;
 import com.example.bootserver.common.result.Result;
 import com.example.bootserver.controller.dto.CreateUserRequest;
 import com.example.bootserver.entity.User;
@@ -61,9 +60,7 @@ public class UserController {
     /** 详情：GET /api/users/{id} */
     @GetMapping("/{id}")
     public Result<User> get(@PathVariable Long id) {
-        User user = userService.getById(id);
-        // 具体文案可以描述用户资源，但业务码统一从 ErrorCode 读取，避免 Controller 散落魔法数字。
-        return user == null ? Result.fail(ErrorCode.NOT_FOUND, "用户不存在") : Result.ok(user);
+        return Result.ok(userService.getRequiredById(id));
     }
 
     /**
@@ -101,11 +98,13 @@ public class UserController {
      */
     @PutMapping("/{id}")
     public Result<Boolean> update(@PathVariable Long id, @RequestBody User user) {
+        // 先由 Service 确认目标资源存在；不存在会抛出业务异常并由全局处理器返回 404，而非成功响应中的 false。
+        userService.getRequiredById(id);
+
         // 以路径 ID 为准，忽略请求体里可能携带的 id，防止调用方把更新目标悄悄换成另一条记录。
         user.setId(id);
 
-        // updateById 使用实体主键生成 WHERE id = ?；返回 true 表示至少更新了一行，false 通常表示目标不存在。
-        // 当前先按 M0 行为把布尔结果返回；“不存在”转为 404 业务异常属于后续 M1-03 的范围。
+        // updateById 使用实体主键生成 WHERE id = ?；资源存在性已在更新前确认，返回值保持原有的受影响行数语义。
         boolean updated = userService.updateById(user);
         return Result.ok(updated);
     }
