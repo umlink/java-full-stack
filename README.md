@@ -91,15 +91,18 @@ cd java-full-stack
 # 打开 docs/00-阶段零-起点盘点与补课/01-能力迁移对照.md
 ```
 
-### 🛠️ 实操工程（学完阶段零/二后动手跑）
+### 🛠️ 实操工程（阶段 0 跑通，阶段 2 开始扩展）
 
-仓库自带配套工程 [boot-app/](boot-app/README.md)（Spring Boot 4 多模块 + H2 + MyBatis-Plus），**只需本机装 JDK 25**（Maven 由仓库自带的 mvnw 提供，无需安装）：
+仓库自带配套工程 [boot-app/](boot-app/README.md)（Spring Boot 4 多模块 + H2 + MyBatis-Plus），**只需本机装 JDK 25**（Maven 由仓库自带的 mvnw 提供，无需安装）。阶段 0 用它确认环境与构建链路；阶段 2 开始把 Spring、Web 与测试知识落到用户域；阶段 3 再扩展商品、订单、缓存与消息等业务能力：
 
 ```bash
 cd boot-app
-./mvnw -pl services/user-service -am install -DskipTests   # Windows 用 mvnw.cmd
-./mvnw -pl services/user-service spring-boot:run            # 启动后访问 http://localhost:8080/api/users
+./mvnw -pl services/user-service -am test                   # 首次先验证：应显示 BUILD SUCCESS
+./mvnw -pl services/user-service -am install -DskipTests    # 安装公共模块，Windows 用 mvnw.cmd
+./mvnw -pl services/user-service spring-boot:run             # 启动后访问 http://localhost:8080/api/users
 ```
+
+看到接口返回用户列表，即表示当前最小样例已可用；完整接口清单与 curl 验证见 [boot-app README](boot-app/README.md)。
 
 ### 推荐学习节奏
 
