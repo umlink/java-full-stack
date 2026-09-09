@@ -5,6 +5,12 @@ spring:
   application:
     name: boot-server
 
+  mvc:
+    servlet:
+      # 所有 Spring MVC 接口共享的外部前缀。Controller 只声明资源路径（如 /users），
+      # 将来改为 /api/v1 时仅修改此处；H2 Console 不是 MVC Controller，不受该前缀影响。
+      path: /api
+
   datasource:
     driver-class-name: org.h2.Driver
     # H2 文件模式：数据固定落盘在 boot-server/data/（聚合根下，随工程走、可提交记录）

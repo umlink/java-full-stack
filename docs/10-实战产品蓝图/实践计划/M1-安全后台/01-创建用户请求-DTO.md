@@ -1,6 +1,6 @@
 # M1-01：创建用户请求 DTO
 
-状态：**未解锁**  前置：M1-00 已完成
+状态：**已完成**  前置：M1-00 已完成
 
 返回 [M1 任务列表](README.md)。
 
@@ -37,8 +37,11 @@ cd boot-server
 
 ## 完成记录
 
-日期：
+日期：2026-09-09
 
-提交：
+提交：待提交
 
 测试与接口证据：
+
+- `cd boot-server && ./mvnw -pl services/user-service -am test`：6 个测试通过。
+- `UserControllerWebTests`：`POST /api/users` 传入 `id=999`、`deleted=1` 时，Service 接收到的 `User` 中这两个字段仍为 `null`，合法字段正常保存并返回新 ID。

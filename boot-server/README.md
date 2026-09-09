@@ -75,6 +75,8 @@ mvnw.cmd -pl services/user-service spring-boot:run
 
 ## 接口一览
 
+**统一接口前缀**：`spring.mvc.servlet.path` 在 `application.yml` 中配置为 `/api`。Controller 仅声明资源路径（例如 `/users`），因此外部接口为 `/api/users`；后期调整为 `/api/v1` 时只修改该配置，不逐个修改 Controller。H2 Console 保持 `http://localhost:8080/h2-console`，不受 MVC 前缀影响。
+
 | 方法 | 路径 | 说明 |
 |-|-|-|
 | GET | `/api/users` | 列表（自动过滤已逻辑删除） |

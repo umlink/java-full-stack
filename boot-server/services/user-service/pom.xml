@@ -28,6 +28,12 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
+        <!-- 参数校验：提供 @Valid 以及 DTO 字段约束的实现，版本由 Spring Boot BOM 托管 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
         <!-- MyBatis-Plus：Boot 4 专用 starter（自带 mybatis / mybatis-spring，勿重复引入） -->
         <dependency>
             <groupId>com.baomidou</groupId>
