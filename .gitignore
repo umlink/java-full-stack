@@ -7,8 +7,8 @@ replay_pid*
 
 # ===== H2 运行时文件 =====
 # 保留 .mv.db 学习数据快照；锁与追踪文件不应提交。
-boot-app/data/*.lock.db
-boot-app/data/*.trace.db
+boot-server/data/*.lock.db
+boot-server/data/*.trace.db
 
 # ===== 前端构建与测试产物 =====
 **/node_modules/

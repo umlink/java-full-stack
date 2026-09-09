@@ -31,7 +31,7 @@ DTO 与 Entity 的职责边界、Spring MVC 的 `@RequestBody`、手动映射为
 ## 验证
 
 ```bash
-cd boot-app
+cd boot-server
 ./mvnw -pl services/user-service -am test
 ```
 

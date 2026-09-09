@@ -6,10 +6,10 @@
 
     <!-- 聚合父 pom：只负责锁版本 + 声明模块，不含业务代码（对齐阶段二 02 讲「多模块聚合工程」范式） -->
     <groupId>com.example</groupId>
-    <artifactId>boot-app-parent</artifactId>
+    <artifactId>boot-server-parent</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <packaging>pom</packaging>
-    <name>boot-app-parent</name>
+    <name>boot-server-parent</name>
     <description>与学习文档配套的 Spring Boot 4 多模块工程：Java 25 + Boot 4.0 + MyBatis-Plus + H2</description>
 
     <modules>

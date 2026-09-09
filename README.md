@@ -55,7 +55,7 @@
 java-full-stack/
 ├── admin-client/                     # B 端管理后台：React + TypeScript + Vite
 ├── user-client/                      # C 端商城：React + TypeScript + Vite
-├── boot-app/                         # 配套实操工程：Spring Boot 4 多模块 + H2 + MyBatis-Plus
+├── boot-server/                      # 配套后端工程：Spring Boot 4 多模块 + H2 + MyBatis-Plus
 ├── docs/
 │   ├── 专有名词速查表.md                  # 名词速查（学习伴侣）
 │   ├── 学习时间规划.md                     # 总排期（甘特图）
@@ -95,22 +95,22 @@ cd java-full-stack
 
 ### 🛠️ 实操工程（阶段 0 跑通，阶段 2 开始扩展）
 
-仓库自带配套工程 [boot-app/](boot-app/README.md)（Spring Boot 4 多模块 + H2 + MyBatis-Plus），**只需本机装 JDK 25**（Maven 由仓库自带的 mvnw 提供，无需安装）。阶段 0 用它确认环境与构建链路；阶段 2 开始把 Spring、Web 与测试知识落到用户域；阶段 3 再扩展商品、订单、缓存与消息等业务能力：
+仓库自带配套工程 [boot-server/](boot-server/README.md)（Spring Boot 4 多模块 + H2 + MyBatis-Plus），**只需本机装 JDK 25**（Maven 由仓库自带的 mvnw 提供，无需安装）。阶段 0 用它确认环境与构建链路；阶段 2 开始把 Spring、Web 与测试知识落到用户域；阶段 3 再扩展商品、订单、缓存与消息等业务能力：
 
 ```bash
-cd boot-app
+cd boot-server
 ./mvnw -pl services/user-service -am test                   # 首次先验证：应显示 BUILD SUCCESS
 ./mvnw -pl services/user-service -am install -DskipTests    # 安装公共模块，Windows 用 mvnw.cmd
 ./mvnw -pl services/user-service spring-boot:run             # 启动后访问 http://localhost:8080/api/users
 ```
 
-看到接口返回用户列表，即表示当前最小样例已可用；完整接口清单与 curl 验证见 [boot-app README](boot-app/README.md)。
+看到接口返回用户列表，即表示当前最小样例已可用；完整接口清单与 curl 验证见 [boot-server README](boot-server/README.md)。
 
 ### 推荐学习节奏
 
 - **先读方法**：花 10 分钟读 [LEARNING.md](LEARNING.md)——AI 协助式学习的六种模式（追问式提问 / 苏格拉底 / 费曼 / 出题官 / Code Review / 卡点日志）与防 AI 依赖指南；
 - **先盘点，再上路**：从「阶段 0 起点盘点」开始，明确自己「无需重学」与「必须重学」的部分；
-- **边学边实现**：按 [实战产品蓝图](docs/10-实战产品蓝图/README.md)（BootMall 云市商城）把每个阶段学到的技术落进 [boot-app](boot-app/README.md)——每个技术点都挂在真实业务场景上；
+- **边学边实现**：按 [实战产品蓝图](docs/10-实战产品蓝图/README.md)（BootMall 云市商城）把每个阶段学到的技术落进 [boot-server](boot-server/README.md)——每个技术点都挂在真实业务场景上；
 - **一段一自检**：每完成一个阶段，对照该阶段末尾的「本节自检」清单做能力自检；
 - **时间弹性**：主线约 9 个半月，时间不足可拉长周期，保持阶段间复盘即可。
 
@@ -121,7 +121,7 @@ cd boot-app
 - 勘误与修正（错别字、过时信息）；
 - 新增阶段 / 主题文档（请遵循既有编号与行文风格）；
 - 补充实战案例、面试题或配套资源；
-- 完善配套工程 boot-app（如新增服务模块、对接文档新概念）。
+- 完善配套工程 boot-server（如新增服务模块、对接文档新概念）。
 
 请确保提交内容符合既有文档的目录结构与 Markdown 风格；**文档增强请先阅读 [CLAUDE.md](CLAUDE.md) 的写作规范**（7 段式模板、术语首现即解释、类比双段式、Mermaid 规范等）。
 

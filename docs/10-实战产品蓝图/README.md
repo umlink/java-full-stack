@@ -4,7 +4,7 @@
 >
 > 这份蓝图回答一个问题：**学到的东西往哪儿落**。它把学习路线中的知识点映射到真实产品，并把每次实践收束为可验证的小任务。概念细节以 `docs/` 各讲正文为准；本目录负责决定「现在做什么、为什么做、怎样验收」。
 
-BootMall 合并了阶段七的三个实践方向：C 端商城、B 端管理后台与可选 AI 扩展。配套工程是 [boot-app](../../boot-app/README.md)，当前技术基线为 Spring Boot 4.0.0、Java 25、MyBatis-Plus 3.5.17 和 H2。
+BootMall 合并了阶段七的三个实践方向：C 端商城、B 端管理后台与可选 AI 扩展。配套工程是 [boot-server](../../boot-server/README.md)，当前技术基线为 Spring Boot 4.0.0、Java 25、MyBatis-Plus 3.5.17 和 H2。
 
 ## 从这里开始
 

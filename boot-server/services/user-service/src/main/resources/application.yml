@@ -3,13 +3,13 @@ server:
 
 spring:
   application:
-    name: boot-app
+    name: boot-server
 
   datasource:
     driver-class-name: org.h2.Driver
-    # H2 文件模式：数据固定落盘在 boot-app/data/（聚合根下，随工程走、可提交记录）
+    # H2 文件模式：数据固定落盘在 boot-server/data/（聚合根下，随工程走、可提交记录）
     # 说明：工作目录是服务模块 services/user-service（mvn 与 IDEA 运行均默认如此），
-    #       相对路径 ../../data 即指向聚合根 boot-app/data/
+    #       相对路径 ../../data 即指向聚合根 boot-server/data/
     # MODE=MySQL：让 H2 尽量兼容 MySQL 语法，与文档中的 MySQL 心智保持一致
     # AUTO_SERVER=TRUE：允许 IDEA Database 面板等工具并发连接查看数据
     # 后期切 MySQL：pom 引入 mysql-connector-j，url 换 jdbc:mysql://localhost:3306/bootapp（MODE=MySQL 已对齐方言，改动最小）

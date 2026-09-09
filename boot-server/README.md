@@ -1,4 +1,4 @@
-# boot-app：与学习文档配套的 Spring Boot 4 多模块工程
+# boot-server：与学习文档配套的 Spring Boot 4 多模块工程
 
 本工程是 [实战产品蓝图](../docs/10-实战产品蓝图/README.md)（BootMall「云市商城」）的**实现载体**：每学完一个阶段，按蓝图的「业务场景 × 技术方案」映射表往这里落一块功能。当前进度：**用户域 CRUD 已就位**（阶段零/二落点），下一步是 Security + JWT 登录（见蓝图的 [M1 实践队列](../docs/10-实战产品蓝图/04-里程碑与当前计划.md)）。
 
@@ -22,7 +22,7 @@
 ## 模块结构
 
 ```
-boot-app/
+boot-server/
 ├── pom.xml                          # 聚合父 pom：锁版本（BOM 范式）+ 声明模块
 ├── infrastructure/                  # 公共底座（打包为普通 jar，被业务服务引用）
 │   └── common-core/                 # 统一响应体 Result 等通用组件（纯 Java，零框架依赖）
@@ -49,7 +49,7 @@ boot-app/
 **环境要求（只需一件：JDK 25）**：本仓库自带 **Maven Wrapper**（`mvnw` / `mvnw.cmd`）——**不需要安装 Maven**，wrapper 会自动下载 Maven 3.9.16 到你的用户目录。唯一前置是 JDK 25（LTS，Temurin / Corretto 均可），装好确认 `java -version` 输出 25 即可。任何电脑 clone 下来都能跑，无本机环境绑定。
 
 **方式一：IDEA（推荐）**
-1. `File → Open` 选择 `boot-app/pom.xml`，以 Maven 工程打开（IDEA 自动识别 wrapper 与 JDK）
+1. `File → Open` 选择 `boot-server/pom.xml`，以 Maven 工程打开（IDEA 自动识别 wrapper 与 JDK）
 2. 首次打开等待依赖下载（国内网络慢可先配阿里云镜像，见[阶段零 02 讲](../docs/00-阶段零-起点盘点与补课/02-工程环境清单.md)）
 3. 直接运行 `BootAppApplication` 的 main 方法
 
@@ -58,7 +58,7 @@ boot-app/
 Windows 用 `mvnw.cmd`，macOS / Linux 用 `./mvnw`（下面以 Windows 为例）：
 
 ```bash
-cd boot-app
+cd boot-server
 # ① 构建并安装全部模块（首次 / 改动了 pom 后执行）
 mvnw.cmd -pl services/user-service -am install -DskipTests
 # ② 启动应用（注意：不要带 -am，run 只对服务模块执行）
@@ -71,7 +71,7 @@ mvnw.cmd -pl services/user-service spring-boot:run
 
 - 接口：`http://localhost:8080/api/users`
 - H2 控制台：`http://localhost:8080/h2-console`（JDBC URL 填 `jdbc:h2:file:../../data/bootapp;MODE=MySQL`，用户 `sa`，密码留空——与 datasource 一致，相对服务模块工作目录）
-- 数据库文件：`boot-app/data/`（随工程走，可提交记录——学习期每次实验的库状态都留档，方便回看 diff 与回滚；**首次启动自动建表灌初始数据，data/ 已有数据则保留历史**）
+- 数据库文件：`boot-server/data/`（随工程走，可提交记录——学习期每次实验的库状态都留档，方便回看 diff 与回滚；**首次启动自动建表灌初始数据，data/ 已有数据则保留历史**）
 
 ## 接口一览
 
