@@ -91,7 +91,47 @@ df -h                   # 空间满了: 日志没轮转 / dump 忘删 是 K8s �
 du -sh /var/log/*       # 找占用大头
 ```
 
+#### load average（负载均值）≠ CPU 使用率
+
+命令注释里的「load average」是对新人最容易看懵的一行，先单独讲清它再往下走。
+
+**生活版类比**：奶茶店有 2 个店员（2 核 CPU）。**load 统计的是「正在调奶茶的 + 门口排队等的人」**，而 **CPU 使用率只问「2 个店员忙不忙」**。于是两种反差都合理：高峰时店员忙到 100%、但门口没人排队（load ≈ 2）；或者店员全去仓库搬货（等磁盘），柜台空着、CPU 空闲，但 load 照样高。
+
+**换成 Linux 排查**：`top` 第一行的 load（1 / 5 / 15 分钟）与 `%Cpu` 那行是两个指标，要对照着看——
+
+```mermaid
+flowchart TD
+    A["load 高：排队的人多"] --> B{"CPU 使用率也高？"}
+    B -- "是" --> C["r 列高 = 运行队列长<br/>真在算：跑满 CPU"]
+    B -- "否，CPU 空闲" --> D["b 列高 = 阻塞队列长<br/>D 状态在等 IO：假忙"]
+    C --> E["top 按 P 排序<br/>定位是哪个进程在算"]
+    D --> F["追磁盘/网络：iostat %util<br/>vmstat wa、ss 连接状态"]
+    F --> G["确认在等什么：<br/>/proc/pid/wchan 或 jstack"]
+```
+
+> **换页（si/so）类比**：内存不够时，OS 把暂时不用的内存块挪到磁盘 swap 分区腾地方——像宿舍住满时把换季衣服塞进行李箱。但磁盘比内存慢几个数量级，反复挪进挪出（`vmstat` 的 si/so 两列持续有值）就是「抖动」，性能会被拖垮，本质是内存不够，不是磁盘的锅。
+
 > ⏸️ **短期可以不学**：tcpdump / Wireshark 的深度分析是「终审手段」——平时网络链路问题常有 SRE / 网络团队兜底，主线会基本用法即可。**何时回来学**：跨环境调不通、慢链路需要自己拿证据时。**面试最低要求**：能说出 `-w` 落盘 + BPF 过滤（host / port）两个基本动作。
+
+#### 一次请求在 Linux 上的旅程（把命令串成链）
+
+上面按「问题类型」列命令，但真实排查时是先有一条请求，再倒着找它卡在哪一环。先把请求从进到出的每站认一遍，之后看命令就知道自己在看哪一站。
+
+**生活版类比**：寄快递——大门收件（网卡）→ 分拣中心（内核协议栈）→ 快递员派送（业务线程）→ 按地址放进写字楼第 3 层（进程内存）→ 盖回执章、写单（写磁盘 / 日志）→ 揽收完成送出去（网卡发包）。
+
+**换成 Linux 排查**：请求慢就沿着这条链，每站挂一个对应命令——
+
+```mermaid
+flowchart LR
+    A["请求进来<br/>网卡收包"] --> B["内核协议栈<br/>TCP 三次握手"]
+    B --> C["内核建的连接<br/>入 listen 队列"]
+    C --> D["Java 线程被唤醒<br/>从 socket 读数据"]
+    D --> E["CPU 执行业务代码<br/>jstack 栈顶在此"]
+    E --> F["访问内存 / 磁盘<br/>页缓存、IO 等待"]
+    F --> G["响应写出<br/>网卡发包"]
+```
+
+> 对照工具：链路每慢一环都能用命令对号入座——`ss` 看 TCP 连接状态（CLOSE-WAIT 就是卡在「收到关闭但本地没关」的中途站）；jstack 栈顶停在 `socketRead` / `FileInputStream.read` 这类名字，就知道卡在 D 站 / F 站；卡哪里，上一节的 load/IO 判断链就排到哪里。
 
 ### 2. Java 进程诊断四件套
 
@@ -140,6 +180,20 @@ $ watch com.demo.PriceClient query '{params, returnObj}' -x 2   # 抓一次真�
 
 ### 4. 实战范式：线上 CPU 100%，五步定位到代码行
 
+先把五步的「决策链」画出来，再看下面的命令细节——每步卡在哪、分岔往哪走，一目了然：
+
+```mermaid
+flowchart TD
+    A["① top 找进程<br/>CPU 最高的 PID"] --> B["② top -Hp PID<br/>找线程 TID"]
+    B --> C["③ printf %x TID<br/>十进制转 16 进制"]
+    C --> D["④ jstack PID > dump.txt<br/>抓全进程线程栈"]
+    D --> E["⑤ grep nid=0x...<br/>找到卡住的那行代码"]
+    E --> F{"看栈顶判性质"}
+    F -- "RUNNABLE + 栈顶是业务代码" --> G["热点代码<br/>回滚 / 摘流量后修"]
+    F -- "GC 线程忙" --> H["内存问题伪装成 CPU<br/>转 jstat 查 GC"]
+    F -- "RUNNABLE 但栈在 native" --> I["等系统调用<br/>查网络 read / 磁盘 IO"]
+```
+
 ```bash
 # 步骤 1: 定位进程
 top -c                                  # 按 P 排序, 找到 %CPU 爆表的 pid
@@ -167,12 +221,29 @@ jstack <pid> | grep -A 30 'nid=0x3039'
 ```
 
 - 常见结局速查：正则灾难性回溯（嵌套量词 `(a+)+b`）、死循环、GC 满负荷（其实是堆问题）、热点方法里的同步 IO、加密 / 序列化风暴。
-- K8s 场景变体：CPU 100% 被 **throttling**（`container_cpu_cfs_throttled_periods` 指标高）≠ 真 CPU 不够——`limits.cpu` 由 CFS 配额实现，超配额的时间片被强制「节流」，表现为 CPU 用不满但请求变慢——先对齐 requests/limits 与 JVM 参数（第 2 讲），再谈调代码。
+- **K8s 场景变体（先排除环境，再谈代码）**：CPU 100% 被 **throttling**（节流——像高速路限速，`limits.cpu` 给了你一条「限速车道」，超出的时间片被强制切成碎片）≠ 真 CPU 不够。
+  - **判据**：`container_cpu_cfs_throttled_periods` 指标高，表现为 CPU 用不满但请求变慢。
+  - **落点**：先对齐 requests/limits 与 JVM 参数（第 2 讲），再谈调代码。
 
 ### 5. 实战场景二：连接池耗尽（HikariCP）
 
 - **现象**：日志刷 `HikariPool-1 - Connection is not available, request timed out`——请求全在等连接，不一定是 DB 挂了。
-- **排查路径**：连接池 metrics 看活跃连接数与等待队列（`hikaricp_connections_active` 是否顶满 maximumPoolSize、`hikaricp_connections_pending` 排多长）→ 慢 SQL 拖住连接不归还 → 代码层连接 / 事务泄漏（未关闭、长事务）。
+- **排查路径第一步，看指标**：连接池 metrics 看活跃连接数与等待队列——`hikaricp_connections_active` 是否顶满 maximumPoolSize、`hikaricp_connections_pending` 排多长。
+- **排查路径第二步，查归还慢**：慢 SQL 拖住连接不归还（explain → 加索引 / 改批量）→ 代码层连接 / 事务泄漏（未关闭、长事务）→ 数据库侧连接数上限。
+
+> 两条分支的换算逻辑就是下面的决策链——池就那么多把枪，先分清「全被占着」还是「有人借了不还」：
+
+```mermaid
+flowchart TD
+    A["日志刷连接超时<br/>HikariPool-1 wait"] --> B{"active 顶满<br/>maximumPoolSize？"}
+    B -- "是" --> C{"pending 有人排队？"}
+    C -- "是" --> D["真的是都在用<br/>慢 SQL / 长事务 / 锁等待"]
+    C -- "否" --> E["连接泄漏<br/>租出去没归还"]
+    B -- "否" --> F["池太小或<br/>DB 侧 max_connections 顶格"]
+    D --> G["explain 看慢 SQL<br/>加索引 / 改批量 / 缩小事务圈"]
+    E --> H["leakDetectionThreshold<br/>抓拿接不还的栈"]
+    F --> I["核对池总大小 × 实例数 ≤ DB 上限"]
+```
 
 ### 坑点提醒
 
@@ -200,29 +271,68 @@ jstack <pid> | grep -A 30 'nid=0x3039'
 ### Q1：线上 Java 服务 CPU 100%，完整的排查步骤？
 **答**：
 - **标准结论**：五步定位：① `top` 找 CPU 高的进程（记 PID）；② `top -Hp PID` 找 CPU 高的线程（记 TID）；③ `printf '%x' TID` 转 16 进制；④ `jstack PID` 抓线程栈，grep `nid=0x...`；⑤ 分析栈顶判断性质并止血。
-- **底层原理**：为什么能定位到行——Linux 是 1:1 线程模型（NPTL），每个 Java 线程对应一个内核线程，jstack 的 nid 就是 OS TID 的 16 进制；jstack 抓的是线程栈快照，高 CPU 线程的栈顶就是它正在执行的代码（含行号）。常见结局：正则灾难性回溯（`(a+)+b` 类嵌套量词）、死循环、热点方法里的同步 IO、GC 满负荷（其实是内存问题伪装成 CPU）。
-- **工程实践**：容器环境先排除 throttling（`container_cpu_cfs_throttled_periods` 高 = limits 配额不够，不是代码问题）；事发时抓栈才有意义，事后重启现场就没了（`kill -3` 打印线程栈的肌肉记忆）；生产用 Arthas `thread -n 5` 比手抓栈更快；优化前后各抓一次栈对比验证。加分：说「RUNNABLE 但栈在 native 方法」说明在等系统调用（网络 read / 磁盘 IO），要往下查 syscall。
+- **底层原理**：
+  - **为什么能定位到行**：Linux 是 1:1 线程模型（NPTL），每个 Java 线程对应一个内核线程，jstack 的 nid 就是 OS TID 的 16 进制；jstack 抓的是线程栈快照，高 CPU 线程的栈顶就是它正在执行的代码（含行号）。
+  - **常见结局（栈顶长什么样）**：正则灾难性回溯（`(a+)+b` 类嵌套量词）、死循环、热点方法里的同步 IO、GC 满负荷（其实是内存问题伪装成 CPU）。
+- **工程实践**：
+  - **先排除环境**：容器环境先排除 throttling（`container_cpu_cfs_throttled_periods` 高 = limits 配额不够，不是代码问题）。
+  - **抓栈时机**：事发时抓栈才有意义，事后重启现场就没了——线上练出 `kill -3` 打印线程栈的肌肉记忆。
+  - **工具与验证**：生产用 Arthas `thread -n 5` 比手抓栈更快；优化前后各抓一次栈对比验证。
+  - **加分**：说「RUNNABLE 但栈在 native 方法」说明在等系统调用（网络 read / 磁盘 IO），要往下查 syscall。
 
 ### Q2：线上 OOM 怎么排查？
 **答**：
-- **标准结论**：三步：① 确认现象（进程被杀 / 抛 OutOfMemoryError，看 `jstat -gcutil` 或容器 OOMKilled）；② 拿堆转储（Heap Dump）——启动参数 `-XX:+HeapDumpOnOutOfMemoryError` 自动留存，或 `jmap -dump` 手动抓；③ 用 MAT 分析（找占堆最大的对象，Dominator Tree 看引用链）。
-- **底层原理**：OOM 分两类——堆 OOM（对象占满堆、GC 顶不住）和堆外 OOM（元空间、直接内存、线程栈）。堆转储记录了崩溃瞬间的对象快照，MAT 从 GC Root 做可达性分析，找到「明明该被回收却还被引用」的泄漏路径。注意 `-XX:+HeapDumpOnOutOfMemoryError` 必须在启动参数里——事后 `jmap -dump:live` 只抓活对象、还会触发一次 Full GC，现场已被污染。
-- **工程实践**：先止血（重启 / 扩容 / 回滚）再分析，dump 要带现场；常见根因：ThreadLocal 持有大对象、静态集合只增不减、连接池 / 缓存无限增长、日志框架堆栈泄漏；容器环境 OOMKilled ≠ Java 堆 OOM——可能是 cgroup 内存上限（含堆外）被突破，先核对 limits 与 JVM 参数。加分：说「OOM 排查的产出一份内存基线」——把正常与异常的对象分布对比，比单看一次 dump 更高效。
+- **标准结论**：三步——
+  - ① 确认现象：进程被杀 / 抛 OutOfMemoryError，看 `jstat -gcutil` 或容器 OOMKilled。
+  - ② 拿堆转储（Heap Dump）：启动参数 `-XX:+HeapDumpOnOutOfMemoryError` 自动留存，或 `jmap -dump` 手动抓。
+  - ③ 用 MAT 分析：找占堆最大的对象，Dominator Tree 看引用链。
+- **底层原理**：
+  - **OOM 分两类**：堆 OOM（对象占满堆、GC 顶不住）和堆外 OOM（元空间、直接内存、线程栈）。
+  - **MAT 怎么找**：堆转储记录了崩溃瞬间的对象快照，MAT 从 GC Root 做可达性分析，找到「明明该被回收却还被引用」的泄漏路径。
+  - **注意启动参数**：`-XX:+HeapDumpOnOutOfMemoryError` 必须在启动参数里——事后 `jmap -dump:live` 只抓活对象、还会触发一次 Full GC，现场已被污染。
+- **工程实践**：
+  - **先后顺序**：先止血（重启 / 扩容 / 回滚）再分析，dump 要带现场。
+  - **常见根因**：ThreadLocal 持有大对象、静态集合只增不减、连接池 / 缓存无限增长、日志框架堆栈泄漏。
+  - **容器特判**：容器环境 OOMKilled ≠ Java 堆 OOM——可能是 cgroup 内存上限（含堆外）被突破，先核对 limits 与 JVM 参数。
+  - **加分**：说「OOM 排查的产出一份内存基线」——把正常与异常的对象分布对比，比单看一次 dump 更高效。
 
 ### Q3：怎么用 jstack 排查死锁和线程阻塞？
 **答**：
 - **标准结论**：死锁会被 jstack 直接标注（`Found one Java-level deadlock`），列出互相等待的线程和锁；大量 BLOCKED 不是死锁而是锁竞争——顺着等锁栈找持锁者；线程池饿死表现为大量线程在 WAITING 等任务。
-- **底层原理**：死锁 = 两个线程各持一把锁互等对方那把（循环等待），jstack 做静态分析可直接判定；锁竞争是「很多人等一把快锁」，现象是同一把锁下挂一堆 BLOCKED——找到持锁线程（往往 RUNNABLE），看它卡在哪个慢操作上。线程池饿死是第三种：任务在排队但无空闲线程，栈上全是 pool 线程在 WAITING。
-- **工程实践**：抓栈要「连续抓多次」（间隔几秒），单次快照会漏掉瞬时状态；线程名规范（业务线程起名）让栈一眼可读；容器里 `kill -3` 触发栈输出到 stdout 配合日志留存；锁竞争治理方向：缩小锁粒度、无锁化（CAS / 并发容器）、异步化。加分：说「大量 BLOCKED + CPU 不高」更像锁问题，「大量 RUNNABLE + CPU 高」更像计算热点。
+- **底层原理**（三种「等」的区分）：
+  - **死锁** = 两个线程各持一把锁互等对方那把（循环等待），jstack 做静态分析可直接判定。
+  - **锁竞争** = 很多人等一把快锁，现象是同一把锁下挂一堆 BLOCKED——顺着等锁栈找到持锁线程（往往 RUNNABLE），看它卡在哪个慢操作上。
+  - **线程池饿死**是第三种：任务在排队但无空闲线程，栈上全是 pool 线程在 WAITING。
+- **工程实践**：
+  - **抓栈次数**：要「连续抓多次」（间隔几秒），单次快照会漏掉瞬时状态。
+  - **可读性**：线程名规范（业务线程起名）让栈一眼可读；容器里 `kill -3` 触发栈输出到 stdout 配合日志留存。
+  - **治理方向**：缩小锁粒度、无锁化（CAS / 并发容器）、异步化。
+  - **加分**：说「大量 BLOCKED + CPU 不高」更像锁问题，「大量 RUNNABLE + CPU 高」更像计算热点。
 
 ### Q4：load average 很高但 CPU 空闲，可能是什么原因？
 **答**：
 - **标准结论**：load average（负载均值）统计「运行队列 + 不可中断睡眠（D 状态）」的线程数，不只是 CPU 忙的线程——CPU 空闲但 load 高，典型原因是大量 D 状态线程：磁盘 IO 等待（`iostat` %util 高 + await 高）、网络 IO 阻塞、NFS / 锁等待。
-- **底层原理**：Linux 的 load 计算把 TASK_UNINTERRUPTIBLE（D 状态，不可被信号打断、等 IO 完成）也计入——设计动机是「这些线程虽然没占 CPU，但系统同样不可用」，所以 load 是「系统整体繁忙度」而非「CPU 利用率」。CPU 忙时 load 高是健康信号，IO 卡住时 load 高是故障信号——用 `vmstat` 的 r（运行队列）/ b（阻塞队列）列区分：r 高 = CPU 问题，b 高 = IO 问题。
-- **工程实践**：第一反应 `vmstat 1` 看 r / b 与 wa、`iostat -x 1` 看磁盘 %util / await；D 状态进程可查 `/proc/<pid>/stack` 或 wchan 确认等什么；容器场景叠加 cgroup 视角（容器内看到的 load 是宿主机的，别被误导）。加分：说「load 是趋势指标，单点值没意义，看 1 / 5 / 15 分钟的斜率」。
+- **底层原理**：
+  - **load 怎么算的**：Linux 的 load 把 TASK_UNINTERRUPTIBLE（D 状态，不可被信号打断、等 IO 完成）也计入——设计动机是「这些线程虽然没占 CPU，但系统同样不可用」，所以 load 是「系统整体繁忙度」而非「CPU 利用率」。
+  - **D 状态类比**：生活版——等电梯时，只要按了楼层按钮就不再按面板、死等电梯到（不可被信号打断），中间怎么喊它都不受理，只能等电梯到或换一部。换成 Linux——D 状态线程正等磁盘 / 网络 IO 返回，期间连 `kill` 都杀不动，只能等 IO 结束或系统放弃。
+  - **怎么区分**：CPU 忙时 load 高是健康信号，IO 卡住时 load 高是故障信号——用 `vmstat` 的 r（运行队列）/ b（阻塞队列）列区分：r 高 = CPU 问题，b 高 = IO 问题。
+- **工程实践**：
+  - **第一反应**：`vmstat 1` 看 r / b 与 wa、`iostat -x 1` 看磁盘 %util / await。
+  - **确认在等什么**：D 状态进程可查 `/proc/<pid>/stack` 或 wchan 确认等什么。
+  - **容器注意**：容器内看到的 load 是宿主机的，别被误导。
+  - **加分**：说「load 是趋势指标，单点值没意义，看 1 / 5 / 15 分钟的斜率」。
 
 ### Q5：Java 服务连接池耗尽（HikariCP）怎么排查？
 **答**：
 - **标准结论**：现象是日志刷 `HikariPool-1 - Connection is not available, request timed out`——请求全在等连接。排查路径：先看连接池指标（active 是否顶满 maximumPoolSize、pending 排多长）→ 慢 SQL 拖住连接不归还 → 代码层连接 / 事务泄漏（未关闭、长事务）→ 数据库侧连接数上限。
-- **底层原理**：连接池是「有限的珍贵资源」——每个连接背后是 DB 进程的一个会话（内存 / CPU 开销），池的意义是把「建连成本」摊销成「复用」。池耗尽 = 租出速度 > 归还速度，两类原因：单条连接占用太久（慢 SQL、长事务、锁等待），或占用后不归还（泄漏——try 里拿连接、finally 外忘关，事务注解圈住外部调用）。HikariCP 的 active 与 pending 两个指标就能区分「都被占着」还是「有人排队」。
-- **工程实践**：开 HikariCP metrics 进 Grafana，把 active / pending 与慢 SQL 日志对照；慢 SQL 用 explain 分析、加索引、改批量；事务圈尽量小（读操作不开事务、事务里别调远程）；连接泄漏用 HikariCP 的 leakDetectionThreshold 抓现场；DB 侧 `max_connections` 也要对账（池总大小 × 实例数 ≤ DB 上限）。加分：说「连接池不是越大越好」——大池 × 多实例可能打爆数据库，池大小按 DB 容量规划。
+- **底层原理**：
+  - **连接池是什么**：连接池是「有限的珍贵资源」——每个连接背后是 DB 进程的一个会话（内存 / CPU 开销），池的意义是把「建连成本」摊销成「复用」。
+  - **耗尽公式**：池耗尽 = 租出速度 > 归还速度，两类原因：单条连接占用太久（慢 SQL、长事务、锁等待），或占用后不归还（泄漏——try 里拿连接、finally 外忘关，事务注解圈住外部调用）。
+  - **两个指标**：HikariCP 的 active 与 pending 就能区分「都被占着」还是「有人排队」。
+- **工程实践**：
+  - **建观测**：开 HikariCP metrics 进 Grafana，把 active / pending 与慢 SQL 日志对照。
+  - **慢 SQL**：用 explain 分析、加索引、改批量。
+  - **事务圈**：尽量小（读操作不开事务、事务里别调远程）。
+  - **抓泄漏现场**：连接泄漏用 HikariCP 的 leakDetectionThreshold。
+  - **DB 侧对账**：`max_connections` 也要对账（池总大小 × 实例数 ≤ DB 上限）。
+  - **加分**：说「连接池不是越大越好」——大池 × 多实例可能打爆数据库，池大小按 DB 容量规划。

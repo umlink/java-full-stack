@@ -13,8 +13,8 @@
 | 窗口函数 | 分组内排名/取最新 | `ROW_NUMBER() OVER(PARTITION BY...)` |
 | CTE | 一次查询的临时结果集 | `WITH t AS (SELECT...)` |
 | 索引 | 加速查询 | GIN（JSON）/ B-tree（普通） |
-| MVCC | 多版本并发控制 | 读不加锁 |
-| VACUUM | 清理死元组 | 后台维护 |
+| MVCC | 多版本并发控制（读写各看各的版本，互不等待） | 读不加锁 |
+| VACUUM | 清理死元组（废弃的旧版本记录） | 后台维护 |
 
 ### 最简可运行示例
 ```sql
@@ -50,7 +50,16 @@ SELECT data->'event' FROM event_log;                         -- -> 取 JSON
 ```
 > **该怎么做**：字段常变、不想频繁 ALTER 的场景用 JSONB（如埋点、配置、表单）。
 > **不该怎么做**：JSONB 当普通关系用（那不如拆成规范列）；也别在 JSONB 里存必查但无索引的字段。
-> **为什么 JSONB 比 JSON 文本快**：`jsonb` 存入时就被解析成二进制结构并去重键名，查询不用每次重复解析、还能直接建索引；`json` 只是原样存文本，每次查询都要现场解析，也建不了整列索引。**GIN（Generalized Inverted Index，广义倒排索引）**把「字段值 → 文档」反过来建索引，所以 `@>`、`?` 这类包含查询能走索引——这正是 PG 处理半结构化数据比 MySQL 省事的原因。
+> **为什么 JSONB 比 JSON 文本快**：`jsonb` 存入时就被解析成二进制结构并去重键名，查询不用每次重复解析、还能直接建索引；`json` 只是原样存文本，每次查询都要现场解析，也建不了整列索引。
+>
+> **生活版**：想在上千本书里查「哪个场景出现过凶手」——翻书后「词 → 页码」索引表，比一本本从头翻到尾快得多。
+> **换成 PG**：**GIN（Generalized Inverted Index，广义倒排索引）**就是这份「字段值 → 文档」的反向对照表，`@>`、`?` 这类包含查询直接按值定位文档——这正是 PG 处理半结构化数据比 MySQL 省事的原因。
+```mermaid
+flowchart LR
+    A["JSONB 写入时<br/>把每个字段值拆成词"] --> B["建一张「值 → 文档」对照表<br/>即倒排索引"]
+    B --> C["查询 data 包含某值<br/>走对照表直接命中"]
+    C --> D["不用每条记录<br/>现场解析一遍"]
+```
 
 ### 2. 窗口函数：一行 SQL 解难题
 ```sql
@@ -92,10 +101,34 @@ SELECT u.id, u.name, COALESCE(r.cnt, 0) FROM user u LEFT JOIN recent_orders r US
 -- MVCC 差异: PG 无回滚段, 旧版本元组留在堆表, 靠 VACUUM 清理
 VACUUM (ANALYZE) event_log;    -- 清理死元组 + 更新统计信息
 ```
+> **生活版**：一本书修订改版时，老读者拿着旧版继续读、新读者读新版，谁也不挡谁；出版社定期把没人要的旧印本回收清出仓库。
+> **换成 PG**：UPDATE 不改原行，而是另写一行新版本、旧版本留给老事务读（这就是 MVCC 的「读写不互斥」）；VACUUM 就是那个周期性回收旧印本的出版社。
+```mermaid
+flowchart TD
+    A["UPDATE 一行数据"] --> B["新版本直接插到新位置<br/>旧版本被标记为死元组"]
+    B --> C["老事务还能读旧版本<br/>这就是读写不互斥"]
+    C --> D{"VACUUM 周期性后台扫描"}
+    D -->|"没有长事务卡着"| E["死元组清走<br/>空间可复用、表不膨胀"]
+    D -->|"被长事务挡住"| F["死元组攒着清不掉<br/>表越来越胖、查询变慢"]
+```
 > **该怎么做**：定期 `VACUUM`（或开 autovacuum），避免表膨胀（dead tuples 堆积）。
 > **不该怎么做**：长事务（`SELECT; 睡10分钟; COMMIT`）会阻断 VACUUM——连接池设 `idle_in_transaction_session_timeout` 上限。
 
-> **PG 与 MySQL 的 MVCC 差异（面试高频）**：两者都是 MVCC（Multi-Version Concurrency Control，多版本并发控制），但旧版本放哪不一样——**InnoDB 把旧版本写进 undo log**（逻辑撤销日志，靠后台 purge 线程清理）；**PG 没有回滚段，直接把旧版本元组（tuple）留在堆表（heap）里**，新版本插新位置、旧版本留给老快照读，靠 **VACUUM 回收死元组（dead tuple）**。**为什么 PG 这么设计**：读老版本直接读堆表里的旧元组，物理上简单、不用跨日志解析；代价是表会膨胀、需要维护 VACUUM。两者共同点：**长事务都会让旧版本无法清理**（InnoDB 的 undo 膨胀、PG 的死元组堆积），所以都要限制事务长度。
+> **PG 与 MySQL 的 MVCC 差异（面试高频）**：两者都是 MVCC（Multi-Version Concurrency Control，多版本并发控制 = 读写各自看各自的版本，互不等待锁），但旧版本放哪不一样：
+> - **InnoDB**：旧版本写进 **undo log**（逻辑撤销日志，记录「怎么把某行改回去」），靠后台 **purge 线程**清理。
+> - **PG**：没有回滚段，直接把旧版本元组（tuple）留在堆表（heap）里——新版本插新位置、旧版本留给老快照读，靠 **VACUUM 回收死元组（dead tuple）**。
+> - **为什么 PG 这样设计**：读老版本直接读堆表里的旧元组，物理上简单、不用跨日志解析；代价是表会膨胀、需要维护 VACUUM。
+>
+> **两者共同点**：长事务都会让旧版本无法清理（InnoDB 的 undo 膨胀、PG 的死元组堆积），所以都要限制事务长度。
+```mermaid
+flowchart LR
+    subgraph PG["PostgreSQL 路线"]
+        P1["旧版本元组留在堆表"] --> P2["VACUUM 回收死元组"]
+    end
+    subgraph MySQL["InnoDB 路线"]
+        M1["旧版本写进 undo log"] --> M2["后台 purge 线程清理"]
+    end
+```
 
 ### 3. 扩展（Extensions）——PG 的杀手锏
 ```sql
@@ -137,6 +170,7 @@ EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM "order" WHERE user_id = 10086;
 ## 高可用：流复制 / 主从 / 热备
 
 ### 1. 流复制（Streaming Replication）
+> **流复制（Streaming Replication）**：主库每写一笔事务，就把事务日志实时「外送」给备库，备库照着重放——像主台实时录像、备台同步保存，随时能顶上去。
 ```ini
 # 主库 postgresql.conf
 wal_level = replica            # 开启 WAL 复制(默认 replica)
@@ -154,12 +188,25 @@ pg_basebackup -h 10.0.0.11 -U repl -D /var/lib/postgresql/standby -R
 > - 备库只读（`pg_is_in_recovery()=true`），可做读扩展 / 备份 / 高可用切换。
 > - **PG 主从**：备库读只读，主故障切到备库——写仍是单点（与 MySQL 同理）。
 
-> **同步 vs 异步复制**：默认是异步（备库可能落后主库一点，主库崩溃可能丢最近事务）；要「绝对不丢」可配**同步复制（Synchronous Replication）**——主库等备库确认收到 WAL 才提交，代价是写延迟上升、备库故障会反过来拖住主库写入。工程实践：资金类场景可开同步或半同步折中，一般业务异步 + Patroni 已足够；备库只读正好兼做读扩展与热备。
+> **生活版**：球赛解说员每说一句话，导播台都同步记成口播稿——备台照稿重念就能实时复播。若要保证一句都不错播，务必等备台回话「收到这句」才继续，代价是主台被架住、节奏变慢。
+> **换成 PG**：WAL（Write-Ahead Log，预写日志）=「先把流水账落盘、再改数据」的日志，崩了能按账重放；备库靠不断收到 WAL 并按流水账回放，来保持与主库同步。
+>
+> **同步 vs 异步复制，怎么选**：
+> - **默认异步**：备库可能落后主库一点，主库崩溃可能丢最近几笔事务。
+> - **同步复制（Synchronous Replication）**：主库等备库确认收到 WAL 才提交，绝不丢数据——代价是写延迟上升，且备库故障会反过来拖住主库写入。
+> - **工程实践**：资金类场景可开同步或半同步折中；一般业务「异步 + Patroni」已足够。备库只读，正好兼做读扩展与热备。
 
 ### 2. 主从切换与高可用（Patroni）
 ```text
 PG 主从自动切换: 常用 Patroni(基于 etcd/consul 选主) —— 主挂了自动切到备库
 单库风险: 主库宕机即不可写, 必须配流复制 + 自动切换(Patroni)才谈得上高可用
+```
+```mermaid
+flowchart TD
+    A["备库一直收主库的 WAL 流水账<br/>实时回放、保持同步"] --> B["主库突然宕机<br/>写服务瞬间中断"]
+    B --> C["Patroni 通过 etcd 或 consul<br/>发起新一轮「选主」投票"]
+    C --> D["最合适的备库被提升为新主<br/>开始正常接写"]
+    D --> E["应用经 VIP 或连接池<br/>几乎无感完成切换"]
 ```
 > **该怎么做**：生产 PG 用**流复制 + Patroni 自动切换**（选主），主故障自动接管，数据不丢（WAL 同步）。
 > **不该怎么做**：单 PG 裸奔——宕机即不可用。
@@ -211,16 +258,43 @@ SELECT * FROM logs WHERE created_at >= '2026-09-01' AND created_at < '2026-10-01
 
 ### Q1：MySQL 和 PostgreSQL 怎么选？底层有哪些关键差异？
 
-**答**：标准结论：MySQL 生态成熟、是国内事实标准；PG 功能天花板高（JSONB/窗口/PostGIS/pgvector/扩展），是「功能更全替代」。底层原理对比三点：MVCC 实现不同——InnoDB 用 undo log 存旧版本，PG 把旧版本留在堆表靠 VACUUM 回收；JSON 能力不同——PG 的 JSONB 二进制存储、整列建 GIN，MySQL 的 JSON 要生成列/多值索引兜底；扩展体系不同——PG 的 `CREATE EXTENSION` 生态远超 MySQL。工程实践：按团队存量与招聘池选；要 JSON/向量/地理等高级能力、又不想多维护一套库就选 PG；简单高频 OLTP 场景 MySQL 的运维经验更足。记住：PG 不是严格超集，别拿 PG 硬扛超海量纯追加写日志这类专用负载。
+**答**：**标准结论**：MySQL 生态成熟、是国内事实标准；PG 功能天花板高（JSONB/窗口/PostGIS/pgvector/扩展），是「功能更全替代」。
+
+**底层原理**，三点对比：
+- **MVCC 实现不同**：InnoDB 用 undo log 存旧版本；PG 把旧版本留在堆表，靠 VACUUM 回收。
+- **JSON 能力不同**：PG 的 JSONB 二进制存储、整列建 GIN；MySQL 的 JSON 要生成列/多值索引兜底。
+- **扩展体系不同**：PG 的 `CREATE EXTENSION` 生态远超 MySQL。
+
+**工程实践**：按团队存量与招聘池选；要 JSON/向量/地理等高级能力、又不想多维护一套库就选 PG；简单高频 OLTP 场景 MySQL 的运维经验更足。记住：PG 不是严格超集，别拿 PG 硬扛超海量纯追加写日志这类专用负载。
 
 ### Q2：PG 的 MVCC 和 VACUUM 是什么？和 InnoDB 有什么不同？
 
-**答**：标准结论：PG 用 MVCC 实现读写不互斥，旧版本元组留在堆表，VACUUM 回收死元组防表膨胀。底层原理：PG 没有回滚段，UPDATE 是「新版本插入 + 旧版本标记删除」，老事务按事务 ID 的可见性规则读对应旧版本；死元组越积越多，表越膨胀、索引扫描越慢，所以 autovacuum 周期清理。与 InnoDB 对比：InnoDB 把旧版本写进 undo log、由 purge 线程后台清理，UPDATE 是页内原地更新。工程实践：长事务是 PG 大忌——它阻止 VACUUM 清理导致表无限膨胀；连接池配 `idle_in_transaction_session_timeout` 兜底；监控 `n_dead_tup`，膨胀过大用 pg_repack 在线整理。
+**答**：**标准结论**：PG 用 MVCC 实现读写不互斥，旧版本元组留在堆表，VACUUM 回收死元组防表膨胀。
+
+**底层原理**：
+- **PG 侧**：没有回滚段，UPDATE 是「新版本插入 + 旧版本标记删除」，老事务按事务 ID 的可见性规则读对应旧版本；死元组越积越多，表越膨胀、索引扫描越慢，所以 autovacuum 周期清理。
+- **InnoDB 对比**：旧版本写进 undo log、由 purge 线程后台清理，UPDATE 是页内原地更新。
+
+**工程实践**：长事务是 PG 大忌——它阻止 VACUUM 清理导致表无限膨胀；连接池配 `idle_in_transaction_session_timeout` 兜底；监控 `n_dead_tup`，膨胀过大用 pg_repack 在线整理。
 
 ### Q3：JSONB 和 GIN 索引为什么高效？和 MySQL 的 JSON 比呢？
 
-**答**：标准结论：JSONB 是二进制解析后的 JSON，可整列建 GIN 索引，`@>`/`?` 包含查询走索引。底层原理：GIN（广义倒排索引）把每个 JSON 字段值倒排成「值 → 行」，查询变成倒排查找、O(1) 级命中；JSONB 存时解析一次，查询不用重复解析文本。对比 MySQL：MySQL 的 JSON 列查内部字段要建生成列 + 二级索引，或用多值索引（8.0.17+）且数组包含查询支持晚、要专门语法（JSON_CONTAINS）；PG 一个 GIN 全搞定。工程实践：字段常变、不想频繁 ALTER 的场景用 JSONB（埋点/配置/表单）；但别把 JSONB 当普通关系用——高频点查、需要强约束的字段还是要规范列。
+**答**：**标准结论**：JSONB 是二进制解析后的 JSON，可整列建 GIN 索引，`@>`/`?` 包含查询走索引。
+
+**底层原理**：
+- **GIN（广义倒排索引）**把每个 JSON 字段值倒排成「值 → 行」，查询变成倒排查找、O(1) 级命中。
+- **JSONB 存时解析一次**，查询不用重复解析文本。
+
+**对比 MySQL**：MySQL 的 JSON 列查内部字段要建生成列 + 二级索引，或用多值索引（8.0.17+）且数组包含查询支持晚、要专门语法（JSON_CONTAINS）；PG 一个 GIN 全搞定。
+
+**工程实践**：字段常变、不想频繁 ALTER 的场景用 JSONB（埋点/配置/表单）；但别把 JSONB 当普通关系用——高频点查、需要强约束的字段还是要规范列。
 
 ### Q4：PG 的主从与高可用怎么做？
 
-**答**：标准结论：PG 用流复制（Streaming Replication）做主从，备库只读、可做读扩展与热备；生产配 Patroni（基于 etcd/consul 选主）做主故障自动切换。底层原理：主库把 WAL（Write-Ahead Log）实时推给备库（wal_level=replica、max_wal_senders），备库回放 WAL 保持同步；Patroni 通过分布式协调器选主，主挂后把最合适的备库提升为新主，应用通过 VIP 或连接池感知切换。工程实践：默认异步复制有小窗口丢数据，资金类场景配同步复制（synchronous_standby_names）或半同步折中；单 PG 裸奔 = 宕机即不可用，生产至少「流复制 + 自动切换 + 定期备份」三件套。
+**答**：**标准结论**：PG 用流复制（Streaming Replication）做主从，备库只读、可做读扩展与热备；生产配 Patroni（基于 etcd/consul 选主）做主故障自动切换。
+
+**底层原理**：
+- **流复制**：主库把 WAL（Write-Ahead Log）实时推给备库（`wal_level=replica`、`max_wal_senders`），备库回放 WAL 保持同步。
+- **Patroni 切换**：通过分布式协调器选主，主挂后把最合适的备库提升为新主，应用通过 VIP 或连接池感知切换。
+
+**工程实践**：默认异步复制有小窗口丢数据，资金类场景配同步复制（`synchronous_standby_names`）或半同步折中；单 PG 裸奔 = 宕机即不可用，生产至少「流复制 + 自动切换 + 定期备份」三件套。

@@ -56,13 +56,25 @@ public class ProductSearch {
 CREATE INDEX idx_goods_name ON goods (name);  -- MySQL 的索引是"列→行"
 -- ES 相反: 把 "[苹果手机] [华为手机]" 切词 → "苹果"→doc1, "手机"→doc1,doc2
 ```
+```mermaid
+flowchart LR
+    A["文档 [苹果手机] [华为手机]"] -->|"用 IK 分词器切词"| B["词项 term<br/>苹果 / 手机 / 华为"]
+    B --> C["倒排索引词表 term dictionary<br/>一查即知哪些文档含这个词"]
+    C --> D["posting list（词→文档号列表）<br/>苹果→doc1、华为→doc2、手机→doc1+doc2"]
+    D --> E["搜「手机」→ 词表命中 doc1、doc2<br/>不用从头翻每篇文档"]
+```
 | 分词器 | 用途 | 说明 |
 |-|-|-|
 | `ik_max_word` | 最细粒度切分 | 索引端收录词最全，避免漏搜 |
 | `ik_smart` | 智能切分 | 更精准，词更少 |
-> **该怎么做**：中文用 IK 分词，**索引端与搜索端保持一致**（最稳）——否则两端分词粒度不同，查询词切出来的 token 对不上索引里已有的 token，会「漏搜/误搜」。常见组合：① 索引 `ik_max_word` + 搜索 `ik_smart`（收录全、查询准，但需理解粒度差异）；② 两端统一用 `ik_max_word`（最不易踩坑）。`text` 字段做全文、`keyword` 字段做精确/排序。
 
-> ⏸️ **短期可以不学**：倒排索引的内核实现——term dictionary 的 FST 压缩、posting list 的 Roaring Bitmap、段合并（segment merge）细节。**何时回来学**：做 ES 内存/查询性能深度优化、或开始读 ES 源码时。**面试最低要求**：说出「倒排索引 = 词 → 文档列表，靠 term dictionary 定位词、posting list 存文档号」即可。
+> **类比一下（词典 vs 逐页翻书）**：生活版——一本 500 页的书想找「手机」这个字，从头一页页翻是全文苦力；出版社在书尾印「索引表」，把「手机」直接标在第几页，一查就到。换成 ES/MySQL——MySQL 是按列排好队、点对点查值；ES 把每篇文档先切词，维护一张「词 → 文档号」的索引表，查询直接命中——图见上方流程块。
+
+> **该怎么做**：中文用 IK 分词，**索引端与搜索端保持一致**（最稳）——否则两端分词粒度不同，查询词切出来的 token 对不上索引里已有的 token，会「漏搜/误搜」。
+> **常见组合**：① 索引 `ik_max_word` + 搜索 `ik_smart`（收录全、查询准，但需理解粒度差异）；② 两端统一用 `ik_max_word`（最不易踩坑）。
+> `text` 字段做全文、`keyword` 字段做精确/排序。
+
+> ⏸️ **短期可以不学**：倒排索引的内核实现——term dictionary（词表，记录有哪些词、词指向哪个文件块）的 FST 压缩、posting list（词下的文档号列表）的 Roaring Bitmap、段（segment，一次 refresh 生成的可独立检索小文件）合并细节。**何时回来学**：做 ES 内存/查询性能深度优化、或开始读 ES 源码时。**面试最低要求**：说出「倒排索引 = 词 → 文档列表，靠 term dictionary 定位词、posting list 存文档号」即可。
 
 ### 2. 索引与数据结构（mapping）
 ```json
@@ -83,7 +95,18 @@ PUT /products
 
 > **为什么 text 与 keyword 分开**：`text` 会先分词再建倒排索引，命中靠「词匹配」，无法精确等值与排序；`keyword` 不分词、整体存储，走列式 **doc_values**，支持精确过滤/排序/聚合——所以「一个字段双映射」（`name` 全文 + `name.keyword` 排序）是常见做法。
 
-> **为什么 ES 是近实时（NRT, Near Real-Time）**：写入先落内存 buffer + **translog（事务日志）**，此时**搜不到**；每秒一次的 **refresh** 把 buffer 生成一个可搜索的 segment，才「约 1 秒后可搜」；之后 **flush（commit）** 才把 segment 真正落盘并清空 translog。**为什么这么设计**：每秒批量生成 segment，避免「每条写入都随机写盘」（LSM 的批量合并思想）；translog 就是 WAL（Write-Ahead Log）——机器宕机时靠 translog 重放未落盘写入，防数据丢失。这就是「写入即达、约 1 秒才可见」的原因，也解释了为什么 ES 不能当 OLTP 主库。
+> **为什么 ES 是近实时（NRT, Near Real-Time）**：写入→可见要过三道工序，见下图。
+
+```mermaid
+flowchart LR
+    A["写入请求"] --> B["内存 buffer + translog<br/>此刻搜不到"]
+    B -->|"每秒一次 refresh"| C["生成一个可搜索的 segment<br/>约 1 秒后可搜"]
+    C -->|"flush 提交"| D["segment 落盘<br/>清空 translog"]
+```
+
+> **类比一下（账本 vs 货仓）**：生活版——下单的快递信息先记进「记账本」（translog），货还在仓里没出库，别人查不到；仓库每整点把待发单子统一打包出库（refresh），出库后快递单号才查得到；下班前财务把出库记录正式归档入册（flush）。换成 ES——对应写 buffer+translog、按批 refresh 成段、最后 flush 落盘，把「每条写入都随机写盘」换成批量写盘。
+
+> **为什么这么设计**：每秒批量生成 segment，避免「每条写入都随机写盘」（LSM 的批量合并思想）；translog 就是 WAL（Write-Ahead Log）——机器宕机时靠 translog 重放未落盘写入，防数据丢失。这就是「写入即达、约 1 秒才可见」的原因，也解释了为什么 ES 不能当 OLTP 主库。
 
 ## 进阶
 
@@ -153,11 +176,23 @@ POST /_aliases
 > - 组合使用：按天建 `logs-2026-09`，模板统一 mapping，读写走别名，ILM 管理生命周期。
 
 ### 5. 集群与性能（分片/副本/高可用）
+
+> **类比一下（一套书按册分上架）**：生活版——一套 60 本的百科书，图书馆若全塞一个书架，查书只能由一个人在架子上慢慢找；分成 12 个书架就能并行找，但书架总量固定，拆得越多每个书架越薄。换成 ES——**分片**就是并行查询的粒度，也决定容量上限，所以**一次定够**；每本主书再影印一份副本放隔壁库房（**副本分片**），主书被借走副本顶上（高可用），两家库房同时供人查阅（读扩展）。
+
 - **主分片（primary shard）**：数据的实际存储单元，并行查询的粒度——**一次定够，多了反而慢（跨分片聚合）**。
 - **副本分片（replica）**：主分片的副本——**高可用（主挂了副本顶上）+ 读扩展**。
-- **集群角色**：`node.roles` 可配置 `master`（管元数据）/ `data`（存数据）/ `ingest`（预处理）/ `ml` 等——**大集群分离部署**（master 与 data 分开）。**纯协调节点（coordinating）= `node.roles: []` 空数组**，它不存数据、只接收并分发请求；「coordinating」不是 `node.roles` 里的合法值。
-- **索引生命周期（ILM）**：日志按天/月建索引，配 ILM 做 hot→warm→cold 冷热分层 + 定期 delete——**无限增长的单一大索引是事故源**。
+- **集群角色**：`node.roles` 可配置 `master`（管元数据）/ `data`（存数据）/ `ingest`（预处理）/ `ml` 等——**大集群分离部署**（master 与 data 分开）。
+- **纯协调节点（coordinating）= `node.roles: []` 空数组**：它不存数据、只接收并分发请求；「coordinating」不是 `node.roles` 里的合法值。
+- **索引生命周期（ILM，Index Lifecycle Management）**：日志索引的「自动管家」——按天/月建索引，配 ILM 做 hot→warm→cold 冷热分层（类比自己数据：先放常取的抽屉，几个月后挪到地下室冷库，到期直接销毁）+ 定期 delete——**无限增长的单一大索引是事故源**。
 - **快照备份**：定期 `snapshot` 到对象存储（S3/MinIO），防数据丢失。
+
+```mermaid
+flowchart TD
+    A["一个索引拆多个主分片<br/>P0、P1——并行查询 + 容量分摊"] --> B["每个主分片配副本分片<br/>R0 是 P0 的副本、R1 是 P1 的副本"]
+    B --> C["主分片与副本分片错开节点摆放<br/>node1: P0+R1、node2: R0+P1"]
+    C --> D1["主 P0 挂了<br/>副本 R0 顶上，数据不丢"]
+    C --> D2["读请求可走副本<br/>水平扩展读能力"]
+```
 
 ```json
 // 查看集群健康(分片是否 all 分配)
@@ -205,20 +240,68 @@ GET /_cluster/health
 
 ### Q1：倒排索引的原理？和 MySQL 的 B+ 树索引本质区别是什么？
 
-**答**：标准结论：倒排索引（Inverted Index）是「词 → 文档列表」的反向映射，B+ 树是「值 → 行位置」的正向有序结构。底层原理：文档写入时分词，每个词对应一个 posting list（文档 ID 列表，含词频/位置），搜索时先查词、再对文档列表做并/交操作——所以「搜词」是 O(词数) 的查找而不是全表扫；MySQL 的 `LIKE '%xx%'` 无法利用 B+ 树前缀匹配，只能全表扫，这就是两者检索性能差距的本质。工程实践：B+ 树适合 OLTP 的等值/范围点查，倒排索引适合「不知道精确值、只知道关键词」的全文检索；两者是互补关系——MySQL 存事实、ES 做搜索，别互相替代。
+**答**：
+
+**标准结论**：倒排索引（Inverted Index）是「词 → 文档列表」的反向映射，B+ 树是「值 → 行位置」的正向有序结构。
+
+**底层原理**：文档写入时分词，每个词对应一个 posting list（文档 ID 列表，含词频/位置），搜索时先查词、再对文档列表做并/交操作。
+- 「搜词」是 O(词数) 的查找而不是全表扫。
+- MySQL 的 `LIKE '%xx%'` 无法利用 B+ 树前缀匹配，只能全表扫——这就是两者检索性能差距的本质。
+
+**工程实践**：B+ 树适合 OLTP 的等值/范围点查，倒排索引适合「不知道精确值、只知道关键词」的全文检索；两者是互补关系——MySQL 存事实、ES 做搜索，别互相替代。
 
 ### Q2：ES 为什么是近实时？refresh 和 translog 是什么？
 
-**答**：标准结论：写入先进内存 buffer + translog，每秒一次 refresh 生成可搜索 segment，所以「约 1 秒后才可见」（NRT）。底层原理：translog 是 WAL（Write-Ahead Log）——每次写入先记 translog 防宕机丢数据；refresh 把 buffer 批量转成 segment，避免逐条随机写盘（LSM 批量合并思想，用批量换吞吐）；flush（commit）才把 segment 落盘并清空 translog。工程实践：对可见性要求高的场景可调小 `refresh_interval`（如 100ms）或调 refresh API 强制刷新，但会牺牲写吞吐；数据安全上「副本数 ≥1 + 定期快照」比追求秒级可见更重要——这也是 ES 当不了 OLTP 主库的原因之一。
+**答**：
+
+**标准结论**：写入先进内存 buffer + translog，每秒一次 refresh 生成可搜索 segment，所以「约 1 秒后才可见」（NRT）。
+
+**底层原理**：
+- translog 是 WAL（Write-Ahead Log）——每次写入先记 translog 防宕机丢数据。
+- refresh 把 buffer 批量转成 segment，避免逐条随机写盘（LSM 批量合并思想，用批量换吞吐）。
+- flush（commit）才把 segment 落盘并清空 translog。
+
+**工程实践**：对可见性要求高的场景可调小 `refresh_interval`（如 100ms）或调 refresh API 强制刷新，但会牺牲写吞吐；数据安全上「副本数 ≥1 + 定期快照」比追求秒级可见更重要——这也是 ES 当不了 OLTP 主库的原因之一。
 
 ### Q3：深分页为什么慢？search_after 为什么能解决？
 
-**答**：标准结论：`from+size` 深翻页时每个分片都要取「from+size」条再全局合并丢弃，且 `max_result_window` 默认 10000 封死；`search_after` 用上一页最后一条的排序值做游标，成本恒定。底层原理：分布式下没有「全局第 N 条」，from+size 必须把每个分片的前 N 条全拉出来归并排序，N 越大成本越高；search_after 只向后取一页，天然避免重复跳过已看过的数据。工程实践：网页翻页（<1w 条）用 from+size 没问题；无限滚动/深翻页用 search_after；全量导出用 PIT + search_after 锁一致性快照（scroll 已不推荐）。常见误区：search_after 不能任意跳页，且排序值要唯一（加 _id 兜底）。
+**答**：
+
+**标准结论**：`from+size` 深翻页时每个分片都要取「from+size」条再全局合并丢弃，且 `max_result_window` 默认 10000 封死；`search_after` 用上一页最后一条的排序值做游标，成本恒定。
+
+**底层原理**：
+- 分布式下没有「全局第 N 条」，from+size 必须把每个分片的前 N 条全拉出来归并排序，N 越大成本越高。
+- search_after 只向后取一页，天然避免重复跳过已看过的数据。
+
+**工程实践**：
+- 网页翻页（<1w 条）用 from+size 没问题；无限滚动/深翻页用 search_after。
+- 全量导出用 PIT + search_after 锁一致性快照（scroll 已不推荐）。
+- **常见误区**：search_after 不能任意跳页，且排序值要唯一（加 `_id` 兜底）。
 
 ### Q4：text 和 keyword 有什么区别？分词器怎么选？
 
-**答**：标准结论：text 分词建倒排索引做全文匹配，keyword 不分词整体存做精确过滤/排序/聚合。底层原理：text 走 analyzer（分词器）拆成 token，match 查询靠词匹配命中；keyword 走 doc_values 列式存储，term 查询整体等值。分词器：默认 standard 对中文只能按字/标点切、效果差；中文生产用 IK 分词器（`ik_max_word` 最细、`ik_smart` 智能），索引端与搜索端保持一致或用 max_word + smart 组合。工程实践：一个字段既要全文又要排序就做双字段（name + name.keyword）；别把时间/状态/ID 设成 text，否则无法精确匹配与排序聚合。
+**答**：
+
+**标准结论**：text 分词建倒排索引做全文匹配，keyword 不分词整体存做精确过滤/排序/聚合。
+
+**底层原理**：
+- text 走 analyzer（分词器）拆成 token，match 查询靠词匹配命中。
+- keyword 走 doc_values 列式存储，term 查询整体等值。
+- **分词器**：默认 standard 对中文只能按字/标点切、效果差；中文生产用 IK 分词器（`ik_max_word` 最细、`ik_smart` 智能），索引端与搜索端保持一致或用 max_word + smart 组合。
+
+**工程实践**：一个字段既要全文又要排序就做双字段（name + name.keyword）；别把时间/状态/ID 设成 text，否则无法精确匹配与排序聚合。
 
 ### Q5：MySQL 和 ES 的数据怎么同步？为什么不能把 ES 当主库？
 
-**答**：标准结论：双写 / MQ 异步 / Canal（binlog 订阅）三种，生产推荐 MQ 异步 + 对账补偿。底层原理：ES 没有 ACID 事务，写入是近实时、刷盘靠 refresh/flush——当主库意味着「刚写的读不到、宕机可能丢」；且 ES 的强项是倒排检索而不是 OLTP 点查。工程实践：以 MySQL 为唯一事实源，写操作只动 MySQL，通过 MQ 异步同步 ES，消费失败重试 + 定时对账补偿兜底；Canal 订阅 binlog 无侵入但要部署维护。面试高频追问「一致性怎么保证」——回答最终一致 + 对账，而不是承诺强一致。
+**答**：
+
+**标准结论**：双写 / MQ 异步 / Canal（binlog 订阅）三种，生产推荐 MQ 异步 + 对账补偿。
+
+**底层原理**：
+- ES 没有 ACID 事务，写入是近实时、刷盘靠 refresh/flush——当主库意味着「刚写的读不到、宕机可能丢」。
+- ES 的强项是倒排检索而不是 OLTP 点查。
+
+**工程实践**：
+- 以 MySQL 为唯一事实源，写操作只动 MySQL，通过 MQ 异步同步 ES，消费失败重试 + 定时对账补偿兜底。
+- Canal 订阅 binlog 无侵入但要部署维护。
+- **面试高频追问**「一致性怎么保证」——回答最终一致 + 对账，而不是承诺强一致。

@@ -112,6 +112,39 @@ sequenceDiagram
 
 > 这段旅程最值得对比的一个点：你在 NestJS 里 `@Get()` 装饰器到路由的匹配（`@Controller` + 装饰器 → Nest 内置 Router 完成），在 Spring 里是 **DispatcherServlet + HandlerMapping** 干的活——框架换了，分工没换。
 
+> ☎️ **生活类比：找公司财务报销的总机路径**——你不直接冲进财务室，而是先打前台总机（DispatcherServlet）：前台查「这事归哪个部门、找哪位经办人」（HandlerMapping），再让经办人接待你（Controller 方法），进门时前台还登记你来了（拦截器 preHandle）、办完再销账（postHandle）。
+> 换成 Spring MVC：请求 = 你，前台总机 = DispatcherServlet（**前端控制器**），查「归谁办」= HandlerMapping，经办人 = Controller 方法，真正动手干活 = HandlerAdapter。Spring 逼着每个请求都先进总台再分派——这就是「前端控制器」模式，下面的图把这条路径拉近看全。
+
+```mermaid
+sequenceDiagram
+    participant B as 客户端<br/>（前端 axios/fetch 发请求）
+    participant F as 过滤器链 Filter<br/>（Servlet 最外层关卡：<br/>编码 / 登录态 / 限流等全局事）
+    participant D as DispatcherServlet<br/>（前端控制器总台：<br/>所有请求先进它，再往下分派）
+    participant I as 拦截器链 Interceptor<br/>（Spring MVC 内层钩子：<br/>选中方法后，调用前后各插一手）
+    participant M as HandlerMapping<br/>（路由匹配器：按 URL + 方法<br/>查该调哪个 Controller 方法）
+    participant A as HandlerAdapter<br/>（方法适配器：参数装好、<br/>真正去调用 Controller 的方法）
+    participant H as Controller 方法<br/>（业务入口，你写的代码）
+    participant X as HandlerExceptionResolver<br/>（异常兜底站：任何环节<br/>抛异常都归它收口）
+
+    B->>F: HTTP 请求
+    F->>D: 过滤器放行<br/>（不放行 → 在这层就拦下，到不了 Spring MVC）
+    D->>M: 帮我查：这个 URL + 方法该调谁？
+    M-->>D: 命中 Controller#method<br/>并把该方法的拦截器链一并给出<br/>（没命中 → 404）
+    D->>I: 查完路由，先走拦截器 preHandle<br/>（不放行 → 中断，不再往下）
+    I-->>D: 放行
+    D->>A: 交给 HandlerAdapter 去调用
+    A->>H: 绑好参数 → 调用你的方法
+    H-->>A: 返回结果（或抛异常）<br/>（异常 → 兜底站按类型收口）
+    A-->>I: 返回后走拦截器 postHandle / afterCompletion
+    D-->>F: 处理完，响应原路返回
+    F-->>B: HTTP 响应
+```
+
+> 图注（与 1.0 旅程图的关系）：这是 1.0 那圈的「拉近距离看」，补上了隐藏的两道关卡——**过滤器链**（Tomcat 与 DispatcherServlet 之间，Servlet 层全局关卡）与**拦截器链**（已选中方法后、调用前后，Spring MVC 层钩子）；`HandlerMapping` 只负责「查到该调谁」，`HandlerAdapter`（方法适配器）负责「参数装好、真正去调用」——一个查、一个干。
+
+> 🚪 **生活类比：进小区大门，与进自家单元门**——小区大门门卫（过滤器 Filter）只认「你是不是业主、有没有证」，不分你要去哪一栋；进了大门到自家单元门口，单元门禁（拦截器 Interceptor）再核对一次「你确实住这层」。
+> 换成 Spring MVC：过滤器在**最外层**（Tomcat 与 DispatcherServlet 之间），任何请求都先过它，适合编码、登录态、限流这类「与具体接口无关」的全局事；拦截器在**内层**（已选中目标方法后、调用前后），适合「只关心某些 Controller 方法」的事，如鉴权、打日志。判断放哪层：**与具体接口无关 → Filter；只关心某个方法的前后 → Interceptor**。
+
 #### 1.1 参数绑定与转换
 
 ```java
@@ -157,10 +190,34 @@ public record CreateOrderCmd(
         @Pattern(regexp = "^1\\d{10}$", message = "手机号格式不合法")
         String phone
 ) {}
-// Controller 入参加 @Valid 即触发校验；失败自动 422/400（422 = 语义错误：请求格式对，但内容校验不过；400 = 请求本身格式错），不进业务代码（对照 NestJS 的 Pipe + class-validator）
-// 为什么校验放 DTO 而不是 Service：无效请求在入口 fail-fast——校验放 Service 意味着每个方法都要重复防御，
-// 放 DTO 是「一处声明、全员生效」；也保证脏数据进不了业务层（失败 422/400 即可，不需要走业务错误码）
+// Controller 入参加 @Valid 即触发校验；校验失败自动 422/400：
+//   422 = 语义错误（请求格式对，但内容校验不过）；400 = 请求本身格式错
+//   校验不过直接拦截，进不了业务代码（对照 NestJS 的 Pipe + class-validator）
+// 为什么校验放 DTO 而不是 Service：
+//   无效请求在入口 fail-fast——校验放 Service 意味着每个方法都要重复防御
+//   放 DTO 是「一处声明、全员生效」，脏数据进不了业务层
+//   （失败 422/400 即可，不需要走业务错误码）
 ```
+
+> 入参四路来源、校验关卡具体在哪一站，一图看清：
+
+```mermaid
+flowchart TD
+    A["HTTP 报文送到<br/>（路径段 / 查询串 / 请求体 / Header 四路来源）"] --> B{"Controller 参数<br/>用哪个注解取"}
+    B -->|"@PathVariable"| N1["取 URL 路径段<br/>/api/users/123 的 123"]
+    B -->|"@RequestParam"| N2["取查询串<br/>?status=PAID 的 PAID"]
+    B -->|"@RequestHeader"| N3["取 Header<br/>X-User-Id 的用户身份"]
+    B -->|"@RequestBody"| N4["取请求体 JSON<br/>HttpMessageConverter 反序列化<br/>成 Java 对象（DTO）"]
+    N1 --> T["类型转换到方法声明的类型<br/>String → Long / int…"]
+    N2 --> T
+    N3 --> T
+    N4 --> V{"参数带 @Valid？"}
+    T --> V
+    V -->|"不带 / 校验通过"| OK["参数绑定就绪<br/>→ 进入业务代码"]
+    V -->|"校验失败"| FAIL["@RestControllerAdvice 收口<br/>收集全部字段错误<br/>→ 400/422 + 参数错误码"]
+```
+
+> 图注：只读参数（@PathVariable / @RequestParam / @RequestHeader）走「类型转换」那一路；`@RequestBody` 那一路先反序列化成 DTO，再与其它参数一起过 `@Valid` 校验关卡——`@Valid` 必须挂在参数上才生效（对应「坑点提醒」里「校验注解写在裸参数上不生效」）。
 
 #### 1.3 全局异常：@RestControllerAdvice
 
@@ -198,7 +255,11 @@ flowchart TD
     B -->|一个都没接住| F[容器默认行为：500 错误页<br/>——这就是「漏配 = 异常裸奔」]
 ```
 
-> 底层机制（图注）：`@RestControllerAdvice` 是 Spring MVC `HandlerExceptionResolver`（异常解析体系——就是 1.0 旅程图里兜底那一站）的便捷封装——异常从 Controller 抛出后由 `DispatcherServlet`（总调度台）统一分发，按「异常类型 → 对应 `@ExceptionHandler` 方法」匹配；没匹配到任何处理器才落到容器默认行为（返回 500 错误页）。所以「漏配 = 异常裸奔」的本质是：这个异常没有任何解析器接得住。
+> **底层机制（图注）**：
+> - `@RestControllerAdvice` 是 Spring MVC `HandlerExceptionResolver`（异常解析体系——就是 1.0 旅程图里兜底那一站）的**便捷封装**。
+> - 异常从 Controller 抛出后由 `DispatcherServlet`（总调度台）统一分发，按「异常类型 → 对应 `@ExceptionHandler` 方法」匹配。
+> - 没匹配到任何处理器，才落到容器默认行为（返回 500 错误页）。
+> - 所以「漏配 = 异常裸奔」的本质是：**这个异常没有任何解析器接得住**。
 
 > Spring 6+ 另有 RFC 7807（HTTP 官方的「错误响应标准格式」——出错的响应该长什么样、带哪些字段，RFC 给了统一标准；`ProblemDetail` 是它的 Java 实现）可用；但国内企业实践多为自定义统一响应体（下节），二选一、全公司统一即可。
 
@@ -240,7 +301,10 @@ public enum BizCode {
 > 🏥 **生活类比：HTTP 状态码 = 医院分诊台，业务 code = 科室医生给的诊断单**——分诊台只判断「这单通信本身有没有问题」：送到了（200）、没送到（404/500）、找错门（404/405）。它不负责告诉你病看得成不看成——挂号成功了吗、余额够不够，得等科室医生（业务层）看完，才在诊断单（body 里的 code）上写结论。所以「挂号成功但余额不足」时，分诊台依然算你顺利到达：HTTP 还是 200，真正的结果写在诊断单里。
 > 换成接口：分诊台 = HTTP 状态码，诊断单 = 业务 code。带着这个分工看下面的技术论证——
 
-> **为什么业务失败也回 HTTP 200（业务码在 body 里）**：HTTP 状态码语义有限（成功 / 客户端错 / 服务端错），表达不了「库存不足」这类业务拒绝；而且 4xx/5xx 会触发浏览器、网关、代理的缓存与重试等干预行为，业务错误没必要惊动它们。所以国内团队普遍「HTTP 管传输层对错、code 管业务层对错」双轨制；对外部第三方开放 API 时则更倾向纯 HTTP 状态码 + RFC 7807，二选一全公司统一即可。
+> **为什么业务失败也回 HTTP 200（业务码在 body 里）**：
+> - **HTTP 状态码语义有限**：只有「成功 / 客户端错 / 服务端错」几档，表达不了「库存不足」这类业务拒绝。
+> - **4xx/5xx 会惊动中间层**：触发浏览器、网关、代理的缓存与重试等干预行为，业务错误没必要惊动它们。
+> - **落地口径**：国内团队普遍「HTTP 管传输层对错、code 管业务层对错」**双轨制**；对外部第三方开放 API 时则更倾向纯 HTTP 状态码 + RFC 7807——二选一、全公司统一即可。
 
 #### 2.2 版本化策略
 
@@ -254,6 +318,9 @@ public enum BizCode {
 #### 2.3 幂等设计（重试安全的基础）
 
 **幂等（Idempotency）**：同一个请求发一次和发 N 次，效果相同。HTTP 重试（超时重试、用户狂点）天然存在，所以「写接口」必须幂等——这也是阶段四 RPC 重试的配套纪律。
+
+> 🎟️ **生活类比：演唱会门票「一张座位只卖一次」**——售票先「查座位卖出没」（先读）再「标记已售」（再写）看似稳妥，但两个人同时下单时，两个查询都读到「未售出」，就都买成了——这正是「先查后写」被并发插队的漏洞；售票那一刻若把「检查 + 占用」压成一个原子动作（谁先提交谁得票），就只有第一个买得到。
+> 换成 Spring MVC/Redis：先查后写 = 两步非原子操作；`SETNX`（不存在才写入） = 售票瞬间的原子动作，天然保证只有第一个请求生效——幂等的本质就是「并发下的原子检查-执行」。
 
 ```java
 @Service
@@ -334,7 +401,8 @@ public record PageResp<T>(List<T> items, long total, int page, int size, boolean
 public record CursorResp<T>(List<T> items, String cursor, String nextCursor, boolean hasMore) {}
 ```
 
-> 深翻页用游标（`WHERE id > :cursor ORDER BY id LIMIT 20`，索引范围内扫描）；后台用页码。别用页码做深翻页——第 10 万页的 `LIMIT 999980, 20` 是慢查询制造机：MySQL 得先扫出前 999980 行再丢弃，offset 越大扫描量越大、越慢（阶段三第 1 讲回收）。
+> - **深翻页用游标**（`WHERE id > :cursor ORDER BY id LIMIT 20`，索引范围内扫描）；后台管理用页码。
+> - **例外（别用页码做深翻页）**：第 10 万页的 `LIMIT 999980, 20` 是慢查询制造机——MySQL 得先扫出前 999980 行再丢弃，offset 越大扫描量越大、越慢（阶段三第 1 讲回收）。
 
 ### 3. 接口文档：SpringDoc / OpenAPI
 
@@ -423,13 +491,61 @@ public class WebConfig implements WebMvcConfigurer {
 ## 常见面试题
 
 ### Q1：Spring MVC 的全局异常处理是怎么实现的？`@RestControllerAdvice` 的底层机制是什么？
-**答**：标准答案：用 `@RestControllerAdvice` + `@ExceptionHandler` 声明「异常类型 → 响应结构」的映射，业务代码只管抛异常，转 HTTP 响应统一收口在这一处。原理层：Spring MVC 的 `DispatcherServlet` 对每个请求的异常有**异常解析链（HandlerExceptionResolver）**——`@ExceptionHandler` 方法会被注册成 `ExceptionHandlerExceptionResolver`，它按「异常类型 → 处理器方法」做匹配（子类能命中父类的处理器）；整条链都没接住，异常才落到容器默认行为（500 错误页 / Tomcat 错误页）。`@RestControllerAdvice` 只是让这些处理器方法免于逐个注册的便捷载体。工程层：至少处理三类异常——业务异常（`BizException`，转业务错误码）、参数校验异常（`MethodArgumentNotValidException`，收集全部字段错误一次返回）、兜底的 `Exception`（记全日志 + 脱敏提示，别把堆栈原样返回给前端）；日志里打全量堆栈，响应里只给「人话」。
+
+**答**：**标准答案**：用 `@RestControllerAdvice` + `@ExceptionHandler` 声明「异常类型 → 响应结构」的映射。业务代码只管抛异常，转 HTTP 响应统一收口在这一处。
+
+**原理层**：Spring MVC 的 `DispatcherServlet` 对每个请求的异常有一整条**异常解析链（`HandlerExceptionResolver`）**：
+- `@ExceptionHandler` 方法会被注册成 `ExceptionHandlerExceptionResolver`，按「异常类型 → 处理器方法」做匹配。
+- **子类能命中父类的处理器**（类型匹配带继承关系）。
+- 整条链都没接住，异常才落到容器默认行为（500 错误页 / Tomcat 错误页）。
+- `@RestControllerAdvice` 只是让这些处理器方法**免于逐个注册**的便捷载体。
+
+**工程层**：至少处理三类异常——
+- 业务异常（`BizException`）：转业务错误码。
+- 参数校验异常（`MethodArgumentNotValidException`）：收集全部字段错误，一次返回。
+- 兜底的 `Exception`：记全日志 + 脱敏提示，别把堆栈原样返回给前端。
+
+还有一条边界：**日志里打全量堆栈，响应里只给「人话」**。
 
 ### Q2：接口幂等怎么做？「先查后写」为什么不行？
-**答**：标准答案三板斧：**防重 token**（客户端先领 token，提交时带上，服务端用 Redis `SETNX` 原子消费——抢到执行权的请求才放行）、**数据库唯一索引**（业务唯一键建唯一索引，重复插入报 `DuplicateKeyException` 后转「重复提交」，是最后防线）、**状态机**（`WHERE status='CREATED'` 条件更新，天然拒绝第二次迁移）。原理层：幂等的本质是「并发下的原子检查-执行」——「先查再写」是两步，两步之间并发请求可插队，两个请求都能通过检查；`SETNX` 是一条原子命令，把「检查 + 写入」压成一步，才保证只有一个请求生效。工程层：生产组合是「入口 token 拦一道 + 唯一索引兜底」，状态机用于业务流转本身；注意 token 过期时间别设太短（用户 5 分钟重试是合理行为）也别太长（死 token 堆积）；业务失败要还 token，允许重试。
+
+**答**：**标准答案（三板斧）**：
+- **防重 token**：客户端先领 token，提交时带上，服务端用 Redis `SETNX` **原子消费**——抢到执行权的请求才放行。
+- **数据库唯一索引**：业务唯一键建唯一索引，重复插入报 `DuplicateKeyException` 后转「重复提交」——**最后防线**。
+- **状态机**：`WHERE status='CREATED'` 条件更新，天然拒绝第二次迁移。
+
+**原理层**：幂等的本质是「并发下的**原子检查-执行**」——
+- 「先查再写」是**两步**，两步之间并发请求可插队，两个请求都能通过检查 → 幂等被绕过。
+- `SETNX` 是一条**原子命令**，把「检查 + 写入」压成一步，才保证只有一个请求生效。
+
+**工程层**：
+- 生产组合：**入口 token 拦一道 + 唯一索引兜底**，状态机用于业务流转本身。
+- token 过期时间：别设太短（用户 5 分钟重试是合理行为），也别太长（死 token 堆积）。
+- 业务失败要**还 token**，允许用户重试。
 
 ### Q3：深分页为什么慢？怎么优化？
-**答**：标准答案：`LIMIT 999980, 20` 这类深 offset 翻页，MySQL 要先从表头扫出前 999980 行再**丢弃**，offset 越大扫描量越大——第 10 万页的代价和第 1 页完全不同，这就是深分页慢的本质。方案：**游标分页**（`WHERE id > :cursor ORDER BY id LIMIT 20`）——只扫描游标之后的数据，走索引范围扫描，翻页深度与性能无关，适合 App 信息流 / 无限滚动；**覆盖索引 + 延迟关联**（先只查主键再回表）可缓解页码式；海量场景还有 ES 等搜索引擎（覆盖索引 / 延迟关联 / 回表 / B+ 树均为阶段三第 1 讲内容，此处只需记住「游标分页避开了深翻页」这个结论）。原理层：B+ 树的索引扫描是「定位起点后顺序读」，游标方案把起点定位从「从头数 N 行」变成「直接定位到某条记录」，复杂度从 O(offset) 降到 O(1)。工程层：后台管理这种「能跳页」的场景保留页码式但限制最大页数 / 最大 offset；面向用户的分页一律游标。
+
+**答**：**标准答案**：`LIMIT 999980, 20` 这类深 offset 翻页，MySQL 要先从表头**扫出前 999980 行再丢弃**，offset 越大扫描量越大——第 10 万页的代价和第 1 页完全不同，这就是深分页慢的本质。
+
+**方案**：
+- **游标分页**（`WHERE id > :cursor ORDER BY id LIMIT 20`）：只扫描游标之后的数据，走索引范围扫描，**翻页深度与性能无关**——适合 App 信息流 / 无限滚动。
+- **覆盖索引 + 延迟关联**（先只查主键再回表）：可缓解页码式。
+- **海量场景**：还有 ES 等搜索引擎。（覆盖索引 / 延迟关联 / 回表 / B+ 树均为阶段三第 1 讲内容，此处只需记住「游标分页避开了深翻页」这个结论。）
+
+**原理层**：B+ 树的索引扫描是「定位起点后顺序读」。游标方案把起点定位从「从头数 N 行」变成「直接定位到某条记录」，复杂度从 O(offset) 降到 O(1)。
+
+**工程层**：后台管理这种「能跳页」的场景保留页码式，但**限制最大页数 / 最大 offset**；面向用户的分页**一律游标**。
 
 ### Q4：什么是 CORS 预检？排查跨域问题从哪几个点入手？
-**答**：标准答案：浏览器同源策略下，跨域**非简单请求**（自定义 Header、`application/json` 的 POST 等）会先发一个 `OPTIONS` 预检请求，问服务器「允不允许这个源 / 这些方法 / 这些头」，服务器回 `Access-Control-Allow-*` 头表示放行，浏览器才发真实请求；**简单请求**（表单 GET/POST 等）不发预检。原理层：预检是浏览器替你做的**安全闸门**——真实请求可能产生副作用（写库、下单），浏览器先试探服务器意愿，避免「请求已执行、浏览器才拦截响应」的尴尬；服务端没配 CORS 时，预检或真实请求会被浏览器直接拦下（Network 里能看到请求但 JS 拿不到响应）。工程层：排查按序看——①预检有没有 200（`OPTIONS` 被鉴权 Filter 拦了会 403，常见于「接口没进 Controller 却 403」）；②响应头 `Access-Control-Allow-Origin` 是否包含前端源（别用 `*` 加 `withCredentials` 组合）；③`Allow-Methods` / `Allow-Headers` 是否覆盖实际请求；④`maxAge` 缓存预检结果，减少 OPTIONS 往返。
+
+**答**：**标准答案**：浏览器**同源策略**下，跨域**非简单请求**（自定义 Header、`application/json` 的 POST 等）会**先发一个 `OPTIONS` 预检请求**，问服务器「允不允许这个源 / 这些方法 / 这些头」；服务器回 `Access-Control-Allow-*` 头表示放行，浏览器才发真实请求。**简单请求**（表单 GET/POST 等）不发预检。
+
+**原理层**：预检是浏览器替你做的**安全闸门**——
+- 真实请求可能产生副作用（写库、下单），浏览器先试探服务器意愿，避免「请求已执行、浏览器才拦截响应」的尴尬。
+- 服务端没配 CORS 时，预检或真实请求会被浏览器直接拦下（Network 里能看到请求，但 JS 拿不到响应）。
+
+**工程层**：排查按序看——
+1. 预检有没有 200？（`OPTIONS` 被鉴权 Filter 拦了会 403，常见于「接口没进 Controller 却 403」）
+2. 响应头 `Access-Control-Allow-Origin` 是否包含前端源？（别用 `*` 加 `withCredentials` 组合）
+3. `Allow-Methods` / `Allow-Headers` 是否覆盖实际请求？
+4. `maxAge` 缓存预检结果，减少 OPTIONS 往返。

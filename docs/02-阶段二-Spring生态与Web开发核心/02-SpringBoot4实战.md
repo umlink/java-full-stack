@@ -2,7 +2,7 @@
 
 > 所属：阶段二 Spring 生态与 Web 开发核心
 > 定位：Boot 的价值是「约定优于配置」——**理解自动装配后，它就从「魔法」变成「可以推理的系统」**：为什么引一个 starter 就有了数据源？为什么改个 yml 前缀就能连上别的 Redis？答案都在本讲。
-> 版本基线：Boot 4 = Framework 7 = Jakarta EE 11 基线；starter 模块化细分、引入 JSpecify 空安全标注等——具体升级差异以官方迁移指南为准。
+> 版本基线：Boot 4 = Framework 7 = Jakarta EE 11 基线；starter 模块化细分、引入 JSpecify（标「这个参数/返回值可能为 null 还是非 null」的注解规范，配合静态检查在编译期抓空指针）空安全标注等——具体升级差异以官方迁移指南为准。
 
 ## 快速入门
 
@@ -192,7 +192,7 @@ spring:
     name: order-service
   threads:
     virtual:
-      enabled: true        # Java 21+ 虚拟线程一键启用（WebMVC 每请求一个虚拟线程）
+      enabled: true        # Java 21+ 虚拟线程一键启用（虚拟线程：JVM 管的超轻量「临时工线程」，便宜到 WebMVC 每请求派一个）
 
 ---
 spring:
@@ -246,15 +246,36 @@ flowchart TD
 - **profile 段**：随 yml 进 git，但只在对应 profile 激活时覆盖，天然是 dev/prod 的分段层。
 - **application.yml**：进 git 的基准配置，任何环境都先读它、再被上面的层逐级覆盖。
 
+> 🏠 类比——**一份菜谱的层层覆盖**。生活版：总店印了基础菜谱（底料、基础菜品）；分店在自家菜单上覆盖招牌菜；客人到店再加一句「不要香菜」；主厨临开火前还能补一句「这份少盐」——新一层只覆盖上一层，但最底层那本菜谱永远在。换成 Spring：`application.yml` 是总店基础菜谱，profile 段是分店覆盖，环境变量是客人加单，命令行参数是主厨临场叮嘱——越靠后越能「现场临时改」，但都站在 `application.yml` 这层地基上。
+
 生产纪律：**密码 / Key 走环境变量，不落文件**。
 
 ### 3. 内置容器与三层拦截
 
 > 🧩 **前置 60 秒：Servlet 与 Servlet 容器**——Servlet 是 Java 世界处理 HTTP 请求的标准接口（≈ Node 的 `http.createServer((req, res) => ...)` 里那对 req/res 的规范版）；Tomcat 是实现这套规范、帮你接收连接和管理请求线程的「容器」。传统 Java 要把 war 包丢给外置的 Tomcat 部署；Boot 把 Tomcat **打进 jar**——`java -jar` 起的就是一台自带 Web 服务器（这就是「内嵌」），这也是容器能换成 Jetty/Undertow 的前提。本讲与第 3、6 讲都会反复用这两个词。
 
+`java -jar` 之后发生了什么——内嵌容器的启动时序，带你走一程：
+
+```mermaid
+sequenceDiagram
+    participant Main as main 方法<br/>（启动入口）
+    participant run as SpringApplication.run<br/>（启动总指挥）
+    participant Bean as Bean 工厂<br/>（统一管理 Bean）
+    participant T as 内嵌 Tomcat<br/>（打包进 jar 的 Web 服务器）
+    participant DS as DispatcherServlet<br/>（MVC 调度台，第 3 讲展开）
+    Main->>run: 传入主类名，启动指令
+    run->>Bean: 扫描组件、跑自动装配
+    Bean-->>run: 业务 Bean 全部就绪
+    run->>T: 启动内嵌容器，监听端口 8080
+    T->>DS: 把 DispatcherServlet 注册进来
+    DS-->>T: 路由就绪
+    T-->>run: Web 环境 OK
+    run-->>Main: 启动完成，开始接收请求
+```
+
 ```java
 @Component
-public class TraceFilter extends OncePerRequestFilter {   // Filter：Servlet 规范层
+public class TraceFilter extends OncePerRequestFilter {   // OncePerRequestFilter：同一请求保证只走一遍的 Filter（防止重定向/错误再分发时跑两遍）；Filter 属 Servlet 规范层
     @Override
     protected void doFilterInternal(HttpServletRequest req,
                                     HttpServletResponse res,
@@ -342,6 +363,8 @@ curl localhost:8080/actuator/metrics/http.server.requests
 
 > 先分清两个词：**JIT**（即时编译——Java 运行时把热点代码边跑边编译成机器码，阶段一第 4 讲那套）是默认模式；下面两种 **AOT**（提前编译——构建期就把代码编译好）都是拿「构建慢」换「启动快」。
 
+> 🎤 类比——**乐队是「即兴」还是「先把整场排练好」**。生活版：一支乐队两种上台方式——即兴演奏（开场慢热，但越演越顺手、和观众越来越合拍），或提前把整场歌单全部排练好（排练耗时长，但开场第一秒就在状态）。换成 Spring：**JIT** 是即兴演奏——Java 运行时把热点代码边跑边编译，跑得越久越顺手；**AOT / 原生镜像** 是提前排练——构建期就把代码编译好，启动毫秒级，但这要求开场前就交代清楚所有没上台的细节（反射 / 动态代理在构建期看不见，得显式登记，这就是「封闭世界」假设）。
+
 | 方案 | 启动 | 代价 |
 |-|-|-|
 | 传统 JIT | 数秒 | — |
@@ -358,6 +381,8 @@ curl localhost:8080/actuator/metrics/http.server.requests
 
 - **SLF4J**（门面，只定义 API）+ **Logback**（Boot 默认实现）——门面模式（遥控器与电视：你按遥控器——SLF4J API——不关心背后是哪台电视——Logback / Log4j2）让实现可替换，业务代码只 `import org.slf4j.*`，换实现不用改业务代码。
 - **MDC**（Mapped Diagnostic Context）：日志框架的 ThreadLocal 上下文——塞进去的值会自动出现在该线程打出的每条日志里。
+
+> 🛵 类比——**外卖骑手的腰包**。生活版：每个骑手（线程）有自己专属的腰包（MDC），把单号（traceId）塞进腰包，这一路上的每张小票（日志）都自动盖上这个单号；每送完一单必须清空腰包，否则会把上一单的单号盖到下一单上——日志「串号」。换成 Spring：`MDC.put("traceId", ...)` 塞进 ThreadLocal（线程的私有储物格，别的线程碰不到），日志 pattern 里的 `%X{traceId}` 自动把它印出来，`finally` 里 `MDC.clear()` 就是「送完清包」——忘了这步，线上日志就会串请求。
 
 ```java
 @Component
@@ -380,13 +405,30 @@ public class TraceIdFilter extends OncePerRequestFilter {
 }
 ```
 
+TraceID 在一条请求里的完整生命周期——MDC 就是「本线程的专属储物格」：
+
+```mermaid
+flowchart LR
+    A["请求到达<br/>TraceIdFilter 先拦截"] --> B{"上游带了 X-Trace-Id 吗？"}
+    B -- "有 → 沿用上游的" --> C["MDC.put(traceId)<br/>把单号塞进本线程储物格"]
+    B -- "没有 → 自己生成 UUID" --> C
+    C --> D["业务方法一路打日志<br/>pattern 里 %X{traceId} 自动印出来"]
+    D --> E["响应头回写 X-Trace-Id<br/>方便前端报障时带线索"]
+    E --> F["finally: MDC.clear()<br/>清空储物格，防串到下一个请求"]
+```
+
 ```xml
 <!-- logback-spring.xml 的 pattern 里加 %X{traceId} -->
 <pattern>%d{HH:mm:ss} %-5level [%X{traceId}] %logger{20} - %msg%n</pattern>
 ```
 
 > 输出效果：`14:02:11 INFO [a3f8c2e1d09b] o.s.d.OrderService - 下单成功 orderId=1001`
-> 级别语义纪律：ERROR = 需要人介入；WARN = 能自愈但要关注；INFO = 关键路径节点；DEBUG = 开发期细节。**敏感信息（手机号 / Token / 身份证）脱敏后再打**。
+> 级别语义纪律（选级别先问「这条日志是给谁看的」）：
+> - ERROR = 需要人介入
+> - WARN = 能自愈但要关注
+> - INFO = 关键路径节点
+> - DEBUG = 开发期细节
+> **敏感信息（手机号 / Token / 身份证）脱敏后再打**。
 
 ### 坑点提醒
 
@@ -413,13 +455,59 @@ public class TraceIdFilter extends OncePerRequestFilter {
 ## 常见面试题
 
 ### Q1：Spring Boot 的自动装配原理是什么？
-**答**：标准答案：入口是 `@SpringBootApplication` 里的 `@EnableAutoConfiguration`，它通过 `@Import` 引入 `AutoConfigurationImportSelector`，扫描 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` 文件（Boot 2.7 前是 `spring.factories`），把登记的所有自动配置类**一次性加载进容器**。原理层：自动配置类不能盲目生效——每个类上都叠了一堆条件注解（`@ConditionalOnClass` / `@ConditionalOnMissingBean` / `@ConditionalOnProperty`），只有当 classpath 里有对应依赖、容器里没有用户自定义 Bean、配置开关打开时，才真正装配。这就是「引 starter 即有、用户自己配就尊让用户（约定让位于显式）」的机制。工程层：排查「Bean 没配出来」时，用 `--debug` 启动看**条件评估报告**（CONDITIONS EVALUATION REPORT），它逐条告诉你哪个条件没满足，而不是靠猜。
+**答**：
+
+**标准结论**：入口是 `@SpringBootApplication` 里的 `@EnableAutoConfiguration`，它通过 `@Import` 引入 `AutoConfigurationImportSelector`（搬运工——专门负责把 imports 文件里登记的名单读出来、交给容器装配），扫描 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` 文件（Boot 2.7 前是 `spring.factories`），把登记的所有自动配置类**一次性加载进容器**。
+
+**原理层**：自动配置类不能盲目生效——每个类上都叠了一堆条件注解，全满足才装配：
+- `@ConditionalOnClass`：classpath 里有对应依赖才装配（「引 starter 即有」的来源）
+- `@ConditionalOnMissingBean`：容器里没有用户自定义 Bean 才装配（「用户自己配就尊让用户——约定让位于显式」）
+- `@ConditionalOnProperty`：配置开关打开才装配
+
+**工程层**：排查「Bean 没配出来」时，用 `--debug` 启动看**条件评估报告**（CONDITIONS EVALUATION REPORT）——它逐条告诉你哪个条件没满足，而不是靠猜。
 
 ### Q2：写一个自定义 starter 需要哪几步？常见的条件注解有哪些？
-**答**：标准答案三步：①写自动配置类（`@AutoConfiguration` + 条件注解 + `@Bean` 方法）；②写配置属性类（`@ConfigurationProperties` 绑 yml 前缀）；③在 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` 里登记自动配置类的全限定名，一行一个。原理层：starter 的本质是「依赖打包 + 自动配置登记」——用户引依赖 → 类出现在 classpath → `@ConditionalOnClass` 满足 → 装配发生，所以它没有任何运行时魔法，全是可推理的条件组合。常见条件注解要能数出：`@ConditionalOnClass`（有依赖才装）、`@ConditionalOnMissingBean`（用户没自定义才装，**尊重显式覆盖**）、`@ConditionalOnProperty`（配置开关）、`@ConditionalOnWebApplication`（Web 场景才装）。工程层：写自动配置时务必给 `@Bean` 加 `@ConditionalOnMissingBean`，否则用户想替换你的默认实现都无从下手。
+**答**：
+
+**标准结论**——三步走：
+1. 写自动配置类（`@AutoConfiguration` + 条件注解 + `@Bean` 方法）
+2. 写配置属性类（`@ConfigurationProperties` 绑 yml 前缀）
+3. 在 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` 里登记自动配置类的全限定名，一行一个
+
+**原理层**：starter 的本质是「依赖打包 + 自动配置登记」——用户引依赖 → 类出现在 classpath → `@ConditionalOnClass` 满足 → 装配发生。所以它没有任何运行时魔法，全是可推理的条件组合。常见条件注解要能数出：
+- `@ConditionalOnClass`：有依赖才装
+- `@ConditionalOnMissingBean`：用户没自定义才装，**尊重显式覆盖**
+- `@ConditionalOnProperty`：配置开关打开才装
+- `@ConditionalOnWebApplication`：Web 场景才装
+
+**工程层**：写自动配置时务必给 `@Bean` 加 `@ConditionalOnMissingBean`——否则用户想替换你的默认实现都无从下手。
 
 ### Q3：Filter、Interceptor、AOP 的区别和执行顺序是什么？怎么选型？
-**答**：标准答案执行顺序：`Filter(doFilter) → Interceptor(preHandle) → AOP(方法切面) → Controller → AOP → Interceptor(afterCompletion) → Filter`。区别：Filter 是 **Servlet 容器规范**层，能拦住任何进入容器的请求（含静态资源），拿不到业务方法；Interceptor 是 **Spring MVC** 层扩展点，能拿到 handler（即将执行的方法），但只在 DispatcherServlet 分发的请求里生效；AOP 作用在 **Bean 方法**上，任何被容器管理的 Bean 方法都能切。原理层：三层分属不同抽象层，层层收窄——容器 → MVC → Bean。工程选型口诀：**跨技术栈的进 Filter**（TraceID、CORS——不依赖 Spring 的东西），**跟路由方法绑定的进 Interceptor**（权限、限流），**跟 Bean 方法绑定的用 AOP**（审计日志、事务）。别在 Filter 里做依赖 Spring 业务 Bean 的复杂逻辑，它执行时部分容器功能还没就绪。
+**答**：
+
+**标准结论**——执行顺序：`Filter(doFilter) → Interceptor(preHandle) → AOP(方法切面) → Controller → AOP → Interceptor(afterCompletion) → Filter`。三层的管辖范围逐层递进：
+- **Filter** 是 **Servlet 容器规范**层：能拦住任何进入容器的请求（含静态资源），拿不到业务方法
+- **Interceptor** 是 **Spring MVC** 层扩展点：能拿到 handler（即将执行的方法），但只在 DispatcherServlet 分发的请求里生效
+- **AOP** 作用在 **Bean 方法**上：任何被容器管理的 Bean 方法都能切
+
+**原理层**：三层分属不同抽象层，层层收窄——容器 → MVC → Bean。
+
+**工程层**——选型口诀：
+- **跨技术栈的进 Filter**（TraceID、CORS——不依赖 Spring 的东西）
+- **跟路由方法绑定的进 Interceptor**（权限、限流）
+- **跟 Bean 方法绑定的用 AOP**（审计日志、事务）
+
+例外：别在 Filter 里做依赖 Spring 业务 Bean 的复杂逻辑——它执行时部分容器功能还没就绪。
 
 ### Q4：`@ConfigurationProperties` 和 `@Value` 有什么区别？为什么推荐前者？
-**答**：标准答案：`@Value` 读单个配置值，写在字段上；`@ConfigurationProperties` 把一组前缀下的配置整体绑定成一个强类型 Bean。区别四点：①**类型安全**——前者拿到的是字符串，后者自动转 `Duration`、`List`、枚举等类型，编译期即校验；②**聚合性**——一组相关配置收敛到一个类里，还是散落各处；③**校验**——后者可配 `@Validated` + JSR-303 注解，配置缺失直接启动报错（fail-fast），前者只能等运行时 NPE；④**松散绑定**——前者要求 key 严格匹配字段名，后者支持 `remote-host` 自动映射 `remoteHost`。原理层：`@ConfigurationProperties` 的绑定发生在容器启动的 `ConfigurationPropertiesBindingPostProcessor` 阶段，所以启动期就能发现配置问题。工程层：一个前缀一个 record / class，作为团队的默认约定；`@Value` 只留给「确实只有一个孤立的配置」的场景，并且两者不要混用于同一组配置，避免「一半走类型绑定、一半走字符串」的割裂。
+**答**：
+
+**标准结论**：`@Value` 读单个配置值，写在字段上；`@ConfigurationProperties` 把一组前缀下的配置整体绑定成一个强类型 Bean。区别四点：
+- **类型安全**：前者拿到的是字符串，后者自动转 `Duration`、`List`、枚举等类型，编译期即校验
+- **聚合性**：一组相关配置收敛到一个类里，还是散落各处
+- **校验**：后者可配 `@Validated` + JSR-303 注解，配置缺失直接启动报错（fail-fast——越早暴露配置错越好），前者只能等运行时 NPE
+- **松散绑定**：前者要求 key 严格匹配字段名，后者支持 `remote-host` 自动映射 `remoteHost`
+
+**原理层**：`@ConfigurationProperties` 的绑定发生在容器启动的 `ConfigurationPropertiesBindingPostProcessor` 阶段，所以启动期就能发现配置问题。
+
+**工程层**：一个前缀一个 record / class，作为团队的默认约定；`@Value` 只留给「确实只有一个孤立的配置」的场景。例外：两者不要混用于同一组配置，避免「一半走类型绑定、一半走字符串」的割裂。

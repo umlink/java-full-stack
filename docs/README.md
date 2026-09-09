@@ -12,71 +12,48 @@
 ```mermaid
 flowchart TD
     subgraph P0[阶段 0：起点盘点与补课]
-        A0[Java 基础语法 / OOP]
-        A1[Go 并发与后端思维]
-        A2[NestJS / NodeJS 服务端经验]
-        A3[前端工程化与架构能力]
+        direction LR
+        A0[Java 基础语法 / OOP] --- A1[Go 并发与后端思维] --- A2[NestJS / NodeJS 服务端经验] --- A3[前端工程化与架构能力]
     end
 
     subgraph P1[阶段 1：Java 语言深化与 JVM]
-        B1[Java 8 函数式基础]
-        B2[Java 17 / 21 / 25 新特性]
-        B3[JVM 内存结构与 GC]
-        B4[JMM 与并发编程]
-        B5[集合框架与源码]
+        direction LR
+        B1[Java 8 函数式基础] --- B2[Java 17 / 21 / 25 新特性] --- B3[JVM 内存结构与 GC] --- B4[JMM 与并发编程] --- B5[集合框架与源码]
     end
 
     subgraph P2[阶段 2：Spring 生态与 Web 开发核心]
-        C1[Spring Framework 核心]
-        C2[Spring Boot 4.x 实战]
-        C3[Spring Web MVC / WebFlux]
-        C4[Spring Security 认证授权]
-        C5[测试工程 JUnit5 / Mockito]
-        C6[NestJS 对照迁移]
+        direction LR
+        C1[Spring Framework 核心] --- C2[Spring Boot 4.x 实战] --- C3[Spring Web MVC / WebFlux] --- C4[Spring Security 认证授权] --- C5[测试工程 JUnit5 / Mockito] --- C6[NestJS 对照迁移]
     end
 
     subgraph P3[阶段 3：数据持久化与中间件]
-        D1[MySQL / PostgreSQL 深度]
-        D2[MyBatis / JPA / jOOQ]
-        D3[Redis 缓存与分布式锁]
-        D4[消息队列 Kafka / RocketMQ]
-        D5[Elasticsearch 与定时任务]
+        direction LR
+        D1[MySQL / PostgreSQL 深度] --- D2[MyBatis / JPA / jOOQ] --- D3[Redis 缓存与分布式锁] --- D4[消息队列 Kafka / RocketMQ] --- D5[Elasticsearch 与定时任务]
     end
 
     subgraph P4[阶段 4：微服务与分布式]
-        E1[Spring Cloud Alibaba]
-        E2[Nacos / Sentinel / Seata]
-        E3[分布式事务与一致性]
-        E4[DDD 领域驱动设计]
-        E5[RPC：Dubbo / gRPC]
+        direction LR
+        E1[Spring Cloud Alibaba] --- E2[Nacos / Sentinel / Seata] --- E3[分布式事务与一致性] --- E4[DDD 领域驱动设计] --- E5[RPC：Dubbo / gRPC]
     end
 
     subgraph P5[阶段 5：云原生与运维工程]
-        F1[Docker / Kubernetes]
-        F2[CI/CD 与平台工程]
-        F3[可观测性 Prometheus / Grafana]
-        F4[Linux 与系统排查]
+        direction LR
+        F1[Docker / Kubernetes] --- F2[CI/CD 与平台工程] --- F3[可观测性 Prometheus / Grafana] --- F4[Linux 与系统排查]
     end
 
     subgraph P6[阶段 6：架构设计与服务端思维]
-        G1[请求链路 / 能力矩阵]
-        G2[高性能 / 高可用]
-        G3[架构模式 / 安全合规]
-        G4[容量规划与压测]
-        G5[多租户设计]
+        direction LR
+        G1[请求链路 / 能力矩阵] --- G2[高性能 / 高可用] --- G3[架构模式 / 安全合规] --- G4[容量规划与压测] --- G5[多租户设计]
     end
 
     subgraph P7[阶段 7：全栈融合与项目实战]
-        H1[全栈能力模型]
-        H2[企业级中后台系统]
-        H3[电商订单系统]
-        H4[AI 应用平台]
+        direction LR
+        H1[全栈能力模型] --- H2[企业级中后台系统] --- H3[电商订单系统] --- H4[AI 应用平台]
     end
 
     subgraph P8[阶段 8：数据库专家]
-        I1[选型决策 / 主从副本]
-        I2[MySQL / PostgreSQL / Redis]
-        I3[Elasticsearch / MongoDB / SQLite / Neo4j]
+        direction LR
+        I1[选型决策 / 主从副本] --- I2[MySQL / PostgreSQL / Redis] --- I3[Elasticsearch / MongoDB / SQLite / Neo4j]
     end
 
     P0 --> P1

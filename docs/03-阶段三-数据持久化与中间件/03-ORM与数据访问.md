@@ -84,6 +84,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
 ### 1. ORM 心智模型与选型光谱
 
 - **ORM**（**Object-Relational Mapping**，对象关系映射：把「Java 对象 ↔ 数据库表行」的转换自动化，让你操作对象而不是拼 SQL 字符串）：概念与 TypeORM / Prisma 完全同构。
+
+**生活版——货架 vs 名片夹**：仓库每件货都躺在一个货架格位（= 数据库的一行），而你办公桌上有一叠「货品名片」（= Java 对象），名片上印着「编号、品名、库存」。你平时只管翻名片、改名片，改完有人自动帮你把货架同步改掉——不必亲自跑去摆货。**换成 Java**：ORM 就是那张「名片 ↔ 货架」的自动同步契约——`@Entity` / `@Table` 标注好映射后，改对象字段就是改表行，省掉手写 SQL；代价是「货架长啥样」被藏起来了，复杂查询要另想办法（正好引出下面的选型光谱）。
 - 三家定位：
 
 ```text
@@ -103,6 +105,30 @@ SQL 掌控力 ←—————————————————————
 | 任何情况 | **不要在一个项目里混用两种以上**——事务、缓存、审计各自为政，排障成本翻倍 |
 
 ### 2. MyBatis / MyBatis-Plus
+
+**生活版——餐厅点单，你不进后厨**：你（Service）对着菜单（Mapper 接口）选菜下单，服务员（MyBatis 动态代理）记下菜单，交给后厨（SqlSession + Executor）按菜单做菜，最后菜端到你面前——**你从没见过后厨里锅铲怎么挥**。同理，MyBatis 里你只写接口 + SQL，中间链路由框架接管。
+
+**换成 Java**：一次 `orderMapper.xxx()` 调用的完整链路是「Mapper 接口（动态代理）→ SqlSession → Executor → JDBC → 数据库」，每一步各司其职，SQL 越早确定越省事。
+
+```mermaid
+sequenceDiagram
+    participant S as Service 服务
+    participant M as Mapper 接口
+    participant SS as SqlSession 会话
+    participant E as Executor 执行器
+    participant D as JDBC 数据库
+
+    S->>M: 调 orderMapper.查询方法
+    M->>SS: 动态代理生成实现, 转发请求
+    SS->>E: 交给执行器处理
+    E->>D: 解析 SQL 模板加绑定参数
+    D-->>E: 返回结果集
+    E-->>S: 封装成实体 List 返回
+```
+
+- **Mapper 接口（无实现类也能跑的替代方案）**：MyBatis 用 JDK 动态代理（阶段一第 3 讲）在运行时为接口生成实现类——在餐厅场景里就是那张看不见的「服务员」。
+- **SqlSession（一次数据库会话的门面）**：打开一次「与数据库的对话」，事务、缓存都挂在它身上。
+- **Executor（真正干活的执行器）**：把 SQL 模板和参数拼好，指挥 JDBC 干活。
 
 #### 2.1 MyBatis 本体：SQL 写在 XML 里
 
@@ -177,6 +203,20 @@ public class OrderQueryService {
 }
 ```
 
+这一行代码背后的完整链路——「条件构造器 → 生成 SQL → 拦截器改 SQL → 执行」，每一步都由框架帮你兜底：
+
+```mermaid
+flowchart LR
+    A["Service 调 selectList"] --> B["LambdaQueryWrapper<br/>把条件方法调用攒成条件片段"]
+    B --> C["BaseMapper 泛型<br/>知道要查哪张表"]
+    C --> D["MyBatis-Plus 核心<br/>拼出完整 SQL 语句"]
+    D --> E["分页等拦截器<br/>按需改写 SQL"]
+    E --> F["执行 SQL<br/>返回实体 List"]
+```
+
+- **BaseMapper 泛型**：`extends BaseMapper<Order>` 的泛型参数 `Order` 就是「要操作哪张表」的定心丸——增删改查方法全部由框架按实体注解现拼。
+- **LambdaQueryWrapper（把方法引用当列名用）**：`Order::getUserId` 不写字符串列名，规避拼写错误，还规避 SQL 注入。
+
 ```java
 // 分页插件：物理分页(自动改写成 LIMIT offset,size)而非内存分页
 @Configuration
@@ -224,7 +264,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 }
 ```
 
-- **JPA / Hibernate 关系**（**JPA** 是 Java 持久化 API **标准**，**Hibernate** 是其默认**实现**）：类比 SLF4J（门面）与 Logback（实现）。
+- **JPA / Hibernate 关系**（**JPA** 是 Java 持久化 API **标准**，**Hibernate** 是其默认**实现**）：类比 SLF4J（门面）与 Logback（实现）；前端视角——就像「TypeORM 规范 + 具体 driver」，JPA 管接口约定，Hibernate 管跑数据库活。
 - 好处：从 MySQL 迁 PG 几乎零改动（方言屏蔽）；代价：复杂 SQL 要跟框架搏斗（JPQL 语法受限、优化器黑盒）。
 - **实体生命周期**（一句话：实体不是静态的 Java 对象，它在持久化上下文里换状态）——四态一行表：
 
@@ -232,7 +272,20 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 |-|-|-|-|
 | 刚 new 出来，未关联上下文 | 受管：脏检查自动同步 DB | 上下文关闭后脱管 | 标记删除，flush 时发 DELETE |
 
-- **一级缓存**（**First-Level Cache**，本质就是持久化上下文本身）：同一持久化上下文里同 ID 只有一个受管实例——事务内重复 `findById` 不打第二条 SQL，脏检查（Dirty Checking）才能把修改统一写回。Hibernate 默认只开一级缓存，二级缓存（Second-Level Cache）默认关闭。
+- **一级缓存（First-Level Cache，本质就是持久化上下文本身）**：同一持久化上下文里同 ID 只有一个受管实例——事务内重复 `findById` 不打第二条 SQL，脏检查（Dirty Checking）才能把修改统一写回。
+- **Hibernate 默认只开一级缓存**；二级缓存（Second-Level Cache，跨会话共享的缓存）默认关闭——这点常被误解为「JPA 自带缓存」而忽略集群失效问题。
+
+**生活版——开会时把发言稿揣兜里**：同一场会里，有人反复问你「刚才那个数字是多少」，你直接掏兜里的稿子念，不用再回办公室翻档案（= 一级缓存命中，不发第二条 SQL）；会议一散，稿子收起来（= 上下文关闭）。**换成 Java**：事务内 `findById` 同 ID 第二次调用直接返回受管实例；一级缓存的生命周期就跟 session / 事务同进退。
+
+```mermaid
+flowchart TD
+    A["事务内 findById 同一 ID"] --> C{同一会话内<br/>之前查过吗}
+    C -->|查过| HIT["命中一级缓存<br/>直接返回实例<br/>不发第二条 SQL"]
+    C -->|没查过| MISS["发 SQL 查数据库"]
+    MISS --> SAVE["结果存进一级缓存<br/>成为受管实例"]
+    SAVE --> HIT
+    HIT --> B["事务提交再新会话<br/>一级缓存清空<br/>需重查"]
+```
 
 #### 3.2 N+1 问题：JPA 的头号坑
 
@@ -244,6 +297,25 @@ for (User u : users) {
 }
 // 结果: 1 + 100 = 101 条 SQL —— 就是 N+1 问题
 // (TypeORM/Prisma 一样有, 前端同学 migration 时最容易带进来的坑)
+```
+
+**生活版——点名报到，每叫一人再打一次电话**：先喊「全班集合」拿到 100 人名单（= 第 1 条 SQL），然后逐个点名、每点到一个人再单独给他家人打个电话问联系方式（= 循环里每人 1 条 SQL）。100 人 → 打了 101 个电话。**换成 Java**：`findAll()` 先回主列表，`for` 循环里每个实体首次访问 `getOrders()` 又各自触发 1 条 SQL——电话费（网络往返）从 1 通涨成 101 通。
+
+```mermaid
+sequenceDiagram
+    participant S as Service 层
+    participant R as Repository 接口
+    participant DB as 数据库
+
+    S->>R: findAll 查用户列表
+    R->>DB: 第 1 条 SQL 查主表
+    DB-->>S: 返回 100 个用户<br/>订单还是空的
+    loop 循环逐个人
+        S->>R: u.getOrders 首次访问
+        R->>DB: 又发 1 条按用户查订单的 SQL
+        DB-->>S: 返回该用户订单
+    end
+    Note over S,DB: 共 1 + 100 = 101 条 SQL
 ```
 
 - **根因**：关联默认 **LAZY（懒加载，Lazy Loading）**——查主表时不带关联，等代码逐个访问 `u.getOrders()` 才逐条发 SQL。ORM 越「省心」、SQL 越不可见，N+1 越容易被悄悄带进来。
@@ -263,7 +335,10 @@ List<OrderBrief> findBriefByUserId(@Param("uid") Long uid);
 
 #### 3.3 数据库变更管理：Flyway
 
-- **为什么需要**：生产禁手工跑 DDL——变更要**可审查**（SQL 进代码评审）、**可重复**（新环境一键建到最新结构）、**可追溯**（哪个版本改了什么，回滚有据）。
+- **为什么需要**：生产禁手工跑 DDL，表结构变更必须满足三性——
+  - **可审查**：SQL 进代码评审，改动有人把关。
+  - **可重复**：新环境跑一遍脚本就能一键建到最新结构。
+  - **可追溯**：每个版本改了什么有记录、回滚有据。
 - **约定**：脚本放 `src/main/resources/db/migration`，文件名即版本：`V1__init.sql`、`V2__add_order_status.sql`——Boot 启动时按序执行没跑过的，已跑的记录在 `flyway_schema_history` 表。
 - **Boot 集成**：引入 `flyway-mysql` 依赖即自动执行（具体版本与配置以官方文档为准）。
 - **与 JPA 的关系**：**禁用 `ddl-auto=update`**——表结构的唯一事实源是迁移脚本，实体只做映射不建表。
@@ -317,6 +392,22 @@ public class ReadOnlyAspect {
 // 写方法不标 → 默认 master。第 2 讲「写后读主」= 写完短窗口 set("master") + 最后 remove
 ```
 
+整条路由的决策链——「读方法打标 → 切面塞标记 → 拿连接时按标记选库 → 用完必清」，一张图串起来：
+
+```mermaid
+flowchart TD
+    A["Controller 调 Service 方法"] --> B{方法标了<br/>@ReadOnly 吗}
+    B -->|是| C["AOP 切面<br/>ThreadLocal 塞入 slave 标记"]
+    B -->|否| D["不标标记<br/>默认走 master 主库"]
+    C --> E["拿连接时<br/>determineCurrentLookupKey 读标记"]
+    D --> E
+    E --> F{"HOLDER 读到的值"}
+    F -->|slave| G["走从库读<br/>分担主库压力"]
+    F -->|master| H["走主库写<br/>保证读到最新"]
+    G --> I["finally 里 remove 标记<br/>防线程池复用污染下一请求"]
+    H --> I
+```
+
 ### 6. 坑点提醒
 
 - **`${}` 只准出现在排序字段这类白名单**：任何来自用户的值过 `${}` 都是注入入口；页面排序字段用枚举白名单映射。
@@ -343,20 +434,89 @@ public class ReadOnlyAspect {
 
 ### Q1：MyBatis 里 `#{}` 和 `${}` 有什么区别？怎么防 SQL 注入？
 
-**答**：标准结论：`#{}` 是预编译参数占位符，生成 PreparedStatement 的 `?`，值不参与 SQL 语法解析，天然免疫注入；`${}` 是字符串原样拼接进 SQL，用户输入可能变成 SQL 的一部分，有注入风险。底层原理：预编译让 SQL 骨架先编译一次，参数通过绑定传递，数据库不会把参数内容当 SQL 解析；`${}` 拼接后整个字符串重新解析，`' or '1'='1` 这类输入就变成查询条件的一部分。工程实践：能选 `#{}` 永远选 `#{}`；`${}` 只准用于排序字段名、表名这类白名单值，且必须用枚举映射校验；MyBatis-Plus 的 `last()` 等价 `${}` 纪律，只拼无注入风险的常量。常见误区：以为过滤引号就安全——注入绕过方式很多（编码、注释符），预编译才是唯一正解；也别把所有动态排序都禁掉，白名单映射是两全方案。
+**答**：
+
+**标准结论**：`#{}` 是预编译参数占位符，生成 PreparedStatement 的 `?`，值不参与 SQL 语法解析，天然免疫注入；`${}` 是字符串原样拼接进 SQL，用户输入可能变成 SQL 的一部分，有注入风险。
+
+**底层原理**：
+- `#{}`：预编译让 SQL 骨架先编译一次，参数通过绑定传递，数据库不会把参数内容当 SQL 解析。
+- `${}`：拼接后整个字符串重新解析，`' or '1'='1` 这类输入就变成查询条件的一部分。
+
+**工程实践**：
+- 能选 `#{}` 永远选 `#{}`。
+- `${}` 只准用于排序字段名、表名这类白名单值，且必须用枚举映射校验。
+- MyBatis-Plus 的 `last()` 等价 `${}` 纪律，只拼无注入风险的常量。
+
+**常见误区**：
+- 以为过滤引号就安全——注入绕过方式很多（编码、注释符），预编译才是唯一正解。
+- 也别把所有动态排序都禁掉，白名单映射是两全方案。
 
 ### Q2：什么是 N+1 问题？怎么解决？
 
-**答**：标准结论：查 1 条主表 SQL + N 条关联 SQL（1 + N = 101 条）。JPA 关联默认懒加载，遍历集合逐个访问关联属性时逐条发 SQL。解法：`@EntityGraph` / JOIN FETCH 预加载、DTO 投影、`@BatchSize` 批量抓取。底层原理：懒加载是「用到才查」，本身没错——问题在循环里每个实体都触发一次查询，把网络往返放大 N 倍；`@EntityGraph` 把 N 条查询改写为一条 LEFT JOIN 一次取齐，DTO 投影则根本不加载实体、只查需要的列。工程实践：列表类查询一律考虑预加载；保留懒加载但通过批量抓取控住条数；排查靠日志里数 SQL 条数。常见误区：以为 N+1 只发生在 JPA——MyBatis 手写 SQL 循环查、TypeORM / Prisma 的 relation 加载一样会有；「先取列表再循环」的代码模式在哪都可能踩。
+**答**：
+
+**标准结论**：查 1 条主表 SQL + N 条关联 SQL（1 + N = 101 条）。JPA 关联默认懒加载，遍历集合逐个访问关联属性时逐条发 SQL。解法：`@EntityGraph` / JOIN FETCH 预加载、DTO 投影、`@BatchSize` 批量抓取。
+
+**底层原理**：
+- 懒加载是「用到才查」，本身没错——问题在循环里每个实体都触发一次查询，把网络往返放大 N 倍。
+- `@EntityGraph`：把 N 条查询改写为一条 LEFT JOIN，一次取齐。
+- DTO 投影：根本不加载实体、只查需要的列。
+
+**工程实践**：
+- 列表类查询一律考虑预加载。
+- 想保留懒加载，就靠批量抓取控住 SQL 条数。
+- 排查靠日志里数 SQL 条数。
+
+**常见误区**：
+- 以为 N+1 只发生在 JPA——MyBatis 手写 SQL 循环查、TypeORM / Prisma 的 relation 加载一样会有。
+- 「先取列表再循环」的代码模式在哪都可能踩。
 
 ### Q3：为什么国内用 MyBatis-Plus 而不用 JPA？
 
-**答**：标准结论：MyBatis 的 SQL 完全可控、易审查，契合国内「DBA 审核 SQL」的文化；JPA 是领域建模和快速开发的标准，但 SQL 生成黑盒、复杂查询受 JPQL 语法限制、优化空间小。底层原理：国内团队普遍有专职 DBA 和 SQL 评审流程，要求 SQL 显式可见、能交给 DBA 改写优化；MyBatis 把 SQL 写在 XML / 注解里天然满足。JPA 的实体生命周期、懒加载、一级缓存等概念对团队约束要求高，用不好容易出 N+1、长事务、意外加载等隐性问题。工程实践：纯 CRUD 密集 + 领域模型复杂选 JPA 开发效率高；团队 SQL 文化强、复杂报表多选 MyBatis-Plus（BaseMapper + LambdaQueryWrapper 已把单表 CRUD 解放，不需要手写）。常见误区：以为 MyBatis 只能手写 SQL——MyBatis-Plus 的单表 CRUD、分页、逻辑删除都是开箱即用；也别一个项目混两套 ORM，事务、缓存、审计各管各的排障成本翻倍。
+**答**：
+
+**标准结论**：MyBatis 的 SQL 完全可控、易审查，契合国内「DBA 审核 SQL」的文化；JPA 是领域建模和快速开发的标准，但 SQL 生成黑盒、复杂查询受 JPQL 语法限制、优化空间小。
+
+**底层原理**：
+- 国内团队普遍有专职 DBA 和 SQL 评审流程，要求 SQL 显式可见、能交给 DBA 改写优化——MyBatis 把 SQL 写在 XML / 注解里天然满足。
+- JPA 的实体生命周期、懒加载、一级缓存等概念对团队约束要求高，用不好容易出 N+1、长事务、意外加载等隐性问题。
+
+**工程实践**：
+- 纯 CRUD 密集 + 领域模型复杂 → 选 JPA，开发效率高。
+- 团队 SQL 文化强、复杂报表多 → 选 MyBatis-Plus（BaseMapper + LambdaQueryWrapper 已把单表 CRUD 解放，不需要手写）。
+
+**常见误区**：
+- 以为 MyBatis 只能手写 SQL——MyBatis-Plus 的单表 CRUD、分页、逻辑删除都是开箱即用。
+- 也别一个项目混两套 ORM，事务、缓存、审计各管各的，排障成本翻倍。
 
 ### Q4：LazyInitializationException 是什么？怎么避免？
 
-**答**：标准结论：JPA 的懒加载关联在事务 / 会话关闭之后被访问，Hibernate 抛出的运行时异常——「session 已经没了，还去查数据」。底层原理：懒加载的关联只有在持久化上下文（Session / EntityManager）存活时才能触发查询；事务提交后上下文关闭，实体进入 detached（脱管）状态，再访问未加载的关联属性，Hibernate 找不到 session 执行 SQL。工程实践：Controller 层不要碰实体的关联属性——要么在 Service 事务内用 `@EntityGraph` 预加载，要么用 DTO 投影返回；把 `open-in-view: true` 当解药是错的，它只是把事务生命周期延长到视图渲染，连接被占满、高并发直接打爆连接池。常见误区：以为加了 `fetch = EAGER` 就一劳永逸——急加载会让不需要关联的查询也带 JOIN，SQL 膨胀；正确做法是按查询场景决定加载策略。
+**答**：
+
+**标准结论**：JPA 的懒加载关联在事务 / 会话关闭之后被访问，Hibernate 抛出的运行时异常——「session 已经没了，还去查数据」。
+
+**底层原理**：
+- 懒加载的关联只有在持久化上下文（Session / EntityManager）存活时才能触发查询。
+- 事务提交后上下文关闭，实体进入 detached（脱管）状态——再访问未加载的关联属性，Hibernate 找不到 session 执行 SQL。
+
+**工程实践**：
+- Controller 层不要碰实体的关联属性——要么在 Service 事务内用 `@EntityGraph` 预加载，要么用 DTO 投影返回。
+- 把 `open-in-view: true` 当解药是错的：它只是把事务生命周期延长到视图渲染，连接被占满，高并发直接打爆连接池。
+
+**常见误区**：以为加了 `fetch = EAGER` 就一劳永逸——急加载会让不需要关联的查询也带 JOIN，SQL 膨胀；正确做法是按查询场景决定加载策略。
 
 ### Q5：逻辑删除 + 唯一索引会踩什么坑？怎么解？
 
-**答**：标准结论：逻辑删除（DELETE 变 UPDATE deleted=1）后，被删数据仍占着唯一索引的位置——删了再建同 order_no 直接唯一键冲突。底层原理：唯一索引约束的是「当前存在的数据行」，逻辑删除不删行，唯一值就一直在；要让「已删数据」不占坑，必须让唯一键随删除变化。工程实践：两种方案——唯一索引包含 deleted 列（deleted 默认 0、删除时写时间戳，每次删除值不同，历史删除互不冲突）；或对「可重建」的业务键把删除时间戳拼进唯一键。常见误区：以为唯一索引加 deleted 列就万事大吉——deleted 只有 0/1 时，删两条同 order_no 的数据照样冲突，要用「时间戳」当 deleted 值才能让每次删除唯一。
+**答**：
+
+**标准结论**：逻辑删除（DELETE 变 UPDATE deleted=1）后，被删数据仍占着唯一索引的位置——删了再建同 order_no 直接唯一键冲突。
+
+**底层原理**：
+- 唯一索引约束的是「当前存在的数据行」；逻辑删除不删行，唯一值就一直在。
+- 要让「已删数据」不占坑，必须让唯一键随删除变化。
+
+**工程实践**：
+- **方案一**：唯一索引包含 deleted 列——deleted 默认 0、删除时写「删除时间戳」，每次删除值不同，历史删除互不冲突。
+- **方案二**：对「可重建」的业务键，把删除时间戳直接拼进唯一键。
+
+**常见误区**：以为唯一索引加 deleted 列就万事大吉——deleted 只有 0/1 时，删两条同 order_no 的数据照样冲突，要用「时间戳」当 deleted 值才能让每次删除唯一。

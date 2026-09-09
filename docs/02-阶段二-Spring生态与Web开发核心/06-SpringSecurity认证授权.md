@@ -17,7 +17,7 @@
 | 授权（Authorization） | 确认「你能干什么」 | admin 才能删用户 |
 | JWT | 一种签名 token，自带用户信息 | 登录后发给前端，每次请求带上 |
 | Security 过滤器链 | 一串安检门，请求逐个过 | 认证 → 授权 → 异常处理 |
-| PasswordEncoder | 密码加密器（BCrypt） | 存密码前加密 |
+| PasswordEncoder | 密码加密器（BCrypt——刻意算得慢的哈希，暴力试密码成本高） | 存密码前加密 |
 | RBAC | 按角色判权限 | admin / ops / viewer |
 | @PreAuthorize | 方法级权限校验 | `hasRole('ADMIN')` |
 | 越权 | 不该访问的资源你访问到了 | 改 URL 里的 id 看别人订单 |
@@ -69,8 +69,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
 ### 常用约定 / 命名提示
 
-- **认证 vs 授权**：认证解决「你是谁」——校验凭据（密码 / token）证明身份可信；授权解决「你能干什么」——身份可信之后才判权限。**顺序固定：先认证后授权**，越过认证直接放行是漏洞根源。
-- **JWT 不加密**：Payload 是 Base64 编码——注意**编码 ≠ 加密**：Base64 只是换个字符表示（把二进制转成可打印字符），没有密钥参与，任何拿到 token 的人都能原样解码读回；所以能被人看到，别放敏感信息。签名（Signature）保证的是**完整性**（Integrity，防篡改），不保证**机密性**（Confidentiality，防偷看）——敏感数据要么放服务端只存 id，要么用 JWE（JWT Encryption）加密整个 JWT。
+- **认证 vs 授权**
+  - **生活版**：进公司大楼，前台先看你工牌确认「你是本公司的人」（认证），再查这张卡「能不能刷开 18 楼研发区」（授权）——只验「你是谁」不看「你能进哪」，随便放人进去就是越权。
+  - **换成 Spring Security**：认证解决「你是谁」——校验凭据（密码 / token）证明身份可信；授权解决「你能干什么」——身份可信之后才判权限。**顺序固定：先认证后授权**，越过认证直接放行是漏洞根源。
+- **JWT 不加密**——三句话讲透：
+  - **编码 ≠ 加密**：Payload 只是 Base64 编码——Base64 只是换个字符表示（把二进制转成可打印字符），没有密钥参与，任何拿到 token 的人都能原样解码读回，所以能被人看到。
+  - **签名 ≠ 保密**：签名（Signature）保证的是**完整性**（Integrity，防篡改），不保证**机密性**（Confidentiality，防偷看）——内容能被看见，就**别放敏感信息**。
+  - **敏感数据怎么办**：要么放服务端只存 id，要么用 JWE（JWT Encryption）加密整个 JWT。
 - **越权（Privilege Escalation）是最常见漏洞**：「登录了就放行」≠「能访问这条资源」——每个资源接口都要校验属主（水平越权 Horizontal Privilege Escalation：拿别人的 id 看别人的数据）。
 - **白名单要注意**：`/actuator/**`、`/v3/api-docs` 这些别裸奔公网，记得配访问控制。
 
@@ -103,6 +108,8 @@ flowchart TB
     I --> J[Controller<br/>你的业务代码]
 ```
 
+> **生活版——演唱会入场**：一道接一道闸口，验票口核对「票是不是你的」（认证过滤器）、分区口查「你的票能进哪个区」（授权过滤器）、票有疑问被带到旁边处置（异常过滤器），全过才进得了内场。换成 Spring Security——上面三个过滤器就是这三道闸口，顺序错位（先授权后认证）等于先问「你能进哪」再查「你是谁」，永远放不进人。
+
 > **位置说明**：`SpringSecurityFilterChain` 本身就是一个 Servlet Filter，排在容器过滤链**最前**；自定义 JWT Filter 加在 `UsernamePasswordAuthenticationFilter` 之前，语义是「先解析令牌填充 SecurityContext，再走标准认证/授权流程」——插错位置，后面的授权过滤器看到的就是空上下文。
 
 > ⏸️ **短期可以不学**：Security 内部几十个过滤器的源码级剖析（DelegatingFilterProxy 如何桥接容器与 Spring、FilterChainProxy 如何编排）不影响日常配置，现在深挖投入产出比低。**何时回来学**：遇到「过滤器不生效 / 顺序错」且靠文档排不掉的诡异问题时。**面试最低要求**：能说清「SpringSecurityFilterChain 本身是一个 Servlet Filter、请求先闯完整条链才到 DispatcherServlet、自定义 JWT 过滤器插在 `UsernamePasswordAuthenticationFilter` 之前」即可。
@@ -129,14 +136,24 @@ public class SecurityConfig {
     @Bean
     PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();   // BCrypt: 每次加密生成随机盐(Salt), 盐和成本参数连同版本号一起嵌入密文,
-                                             // 防彩虹表; 慢哈希(可调 work factor)指数级拖慢离线爆破
+                                             // 防彩虹表(预计算常见密码的哈希对照表, 拿来直接秒查密码); 慢哈希(可调 work factor=单次哈希成本参数, 数值越大算得越慢)指数级拖慢离线爆破
                                              // —— 对比: SHA-256/MD5 是「快哈希」, 快正是它们不能存密码的原因
     }
 }
 ```
 
-- **CSRF 为什么能关（Cookie 自动带 vs JWT 手动带）**：生活版——Cookie 是浏览器**自动带的门票**：每次请求浏览器都无脑把它塞进请求头，所以第三方网站只要诱导你访问一次恶意页面，就能借你身上这张门票替你发请求（转账、改密），这就是 CSRF（跨站请求伪造）；而 JWT 放 `Authorization` 头是**手动出示的门禁卡**：由 JS 显式携带，浏览器不会自动带，攻击者网站拿不到你的 token，自然伪造不出请求。换成 Spring Security——纯 JWT 方案天然免疫 CSRF，所以配置里 `csrf.disable()` 可以放心关；但**一旦改回 Cookie + Session 方案，必须开回来**。
-- **认证四件套（酒店入住）**：生活版——办入住时，前台先查「当日入住名单」里有没有你的预订（查房客登记表），再核对证件照「人证是否一致」，不同证件走不同窗口（护照 / 身份证 / 驾照），大堂经理按你出示的证件类型把你分派到对应窗口，最后你的名字记进入住名单。换成 Spring Security——**AuthenticationManager** = 大堂经理（委派式：实际实现是 `ProviderManager`，按 token 类型把活派给对应 Provider；新增认证方式只加 Provider、不改主流程）；**AuthenticationProvider** = 证件窗口（一种认证方式一个 Provider——密码 / OTP 一次性验证码 / LDAP 企业目录服务认证协议，统一管理公司员工账号 / JWT）；**UserDetailsService** = 查房客登记表（你实现的「按用户名查用户」接口）；**PasswordEncoder** = 核对证件照（密码比对，第 1 节的 BCrypt）；**SecurityContextHolder** = 前台手里那份「当日入住名单」（ThreadLocal 存当前请求身份——Servlet 每请求一线程，身份随线程传递天然隔离，上下文生命周期 = 请求生命周期，请求结束即销毁，避免全局共享的并发脏读）。「四件套」协作如下：
+- **CSRF 为什么能关（Cookie 自动带 vs JWT 手动带）**
+  - **生活版**：Cookie 是浏览器**自动带的门票**：每次请求浏览器都无脑把它塞进请求头，所以第三方网站只要诱导你访问一次恶意页面，就能借你身上这张门票替你发请求（转账、改密），这就是 CSRF（跨站请求伪造）；而 JWT 放 `Authorization` 头是**手动出示的门禁卡**：由 JS 显式携带，浏览器不会自动带，攻击者网站拿不到你的 token，自然伪造不出请求。
+  - **换成 Spring Security**：纯 JWT 方案天然免疫 CSRF，所以配置里 `csrf.disable()` 可以放心关；但**一旦改回 Cookie + Session 方案，必须开回来**。
+- **认证四件套（酒店入住）**
+  - **生活版**：办入住时，前台先查「当日入住名单」里有没有你的预订（查房客登记表），再核对证件照「人证是否一致」，不同证件走不同窗口（护照 / 身份证 / 驾照），大堂经理按你出示的证件类型把你分派到对应窗口，最后你的名字记进入住名单。
+  - **换成 Spring Security**：
+    - **AuthenticationManager** = 大堂经理（委派式：实际实现是 `ProviderManager`，按 token 类型把活派给对应 Provider；新增认证方式只加 Provider、不改主流程）；
+    - **AuthenticationProvider** = 证件窗口（一种认证方式一个 Provider——密码 / OTP 一次性验证码 / LDAP 企业目录服务认证协议，统一管理公司员工账号 / JWT）；
+    - **UserDetailsService** = 查房客登记表（你实现的「按用户名查用户」接口）；
+    - **PasswordEncoder** = 核对证件照（密码比对，第 1 节的 BCrypt）；
+    - **SecurityContextHolder** = 前台手里那份「当日入住名单」（ThreadLocal 存当前请求身份——Servlet 每请求一线程，身份随线程传递天然隔离，上下文生命周期 = 请求生命周期，请求结束即销毁，避免全局共享的并发脏读）。
+  - 「四件套」协作如下：
 
 ```mermaid
 flowchart LR
@@ -148,6 +165,8 @@ flowchart LR
 ```
 
 ### 2. JWT：无状态认证（Stateless Authentication）的代价与补法
+
+> **生活版——自助储物柜**：寄存时给你一张带条码的纸（token），柜子不登记你的名字、不记台账（服务端不存 session）；凭条码随时自己开柜（验签即信），但这张纸丢了、被人捡到，在过期前谁都能开（无法主动作废）——这就是「无状态」的代价：方便了扩容，失去了掌控。换成 Spring Security——下面这段过滤器就是「开柜逻辑」：验签通过塞身份、失败一律当匿名。
 
 ```java
 // 自定义过滤器: 验签 → 构造 Authentication → 塞进 SecurityContext (≈ NestJS 的 JWT Strategy 全在 passport-jwt 里, Spring 要自己写)
@@ -173,7 +192,24 @@ public class JwtAuthFilter extends OncePerRequestFilter {   // OncePerRequestFil
 }
 ```
 
-- **双 token 续期**：短命 access token（15min，验签用，不落库）+ 长命 refresh token（7d，存 Redis（缓存数据库，阶段三第 4 讲展开）/DB，可撤销）→ 过期前用 refresh 换新 access；前端在 401 时静默刷新重试，整条链路如下：
+**纯 JWT 的校验流程总览**（对应上面这段过滤器）：
+
+```mermaid
+flowchart TD
+    A[请求头带 Authorization] --> B{以 Bearer 开头?}
+    B -- 否 --> Y[直接放行<br/>无身份进链<br/>授权层按匿名拦]
+    B -- 是 --> C[parseAndVerify<br/>验签 + 过期检查]
+    C --> D{验签通过?}
+    D -- 是 --> E[构造 Authentication<br/>塞进 SecurityContext]
+    D -- 否 --> F[clearContext<br/>清空上下文<br/>等同匿名]
+    E --> Y
+    F --> Y
+    Y --> G[进入后续授权过滤器<br/>读 SecurityContext 判定权限]
+```
+
+- **双 token 续期**
+  - **设计**：短命 access token（15min，验签用，不落库）+ 长命 refresh token（7d，存 Redis（缓存数据库，阶段三第 4 讲展开）/DB，可撤销）。
+  - **流程**：过期前用 refresh 换新 access；前端在 401 时静默刷新重试，整条链路如下：
 
 ```mermaid
 sequenceDiagram
@@ -187,7 +223,8 @@ sequenceDiagram
 ```
 
 > **前端回收**：你在前端写过的「401 拦截 → 刷新 token → 重试原请求」逻辑，就是这套方案的前端半边——后端只负责签发新 token，何时触发、怎么重试、怎么做到用户无感，全在 axios 拦截器里，前端经验直接平移。
-- **登出怎么登**：JWT 天然无法撤销——登出时把 `jti`（JWT ID，签发时生成的全网唯一标识）写进 **Redis 黑名单**（TTL = token 剩余寿命），网关/过滤器验签后多查一次黑名单。「无状态」省了 session，但撤销需求一来，状态又回来了（只是换了地方）——这是 JWT 方案必须接受的代价。
+- **登出怎么登（规则）**：JWT 天然无法撤销——登出时把 `jti`（JWT ID，签发时生成的全网唯一标识）写进 **Redis 黑名单**（TTL = token 剩余寿命），网关/过滤器验签后多查一次黑名单。
+- **代价（例外）**：「无状态」省了 session，但撤销需求一来，状态又回来了（只是换了地方）——这是 JWT 方案必须接受的代价。
 
 ```mermaid
 sequenceDiagram
@@ -238,7 +275,10 @@ public void cancel(Order order) { ... }   // 参数是 Order, 才有 .ownerId; p
                                           // principal = 「当前登录主体」的泛称, 认证通过后 SecurityContext 里的那个人
 ```
 
-- RBAC（Role-Based Access Control，基于角色）管功能入口，ABAC（Attribute-Based Access Control，基于属性：部门 / 数据范围 / 时间）管数据边界——企业后台通常 RBAC 为骨、数据权限（部门树 / 本人）为肉（项目一 RBAC 会完整落地）。
+- **RBAC vs ABAC 分工**
+  - **RBAC**（Role-Based Access Control，基于角色）：管功能入口——谁能进哪个功能。
+  - **ABAC**（Attribute-Based Access Control，基于属性：部门 / 数据范围 / 时间）：管数据边界——同一功能里能看哪些数据。
+  - **落地组合**：企业后台通常 RBAC 为骨、数据权限（部门树 / 本人）为肉（项目一 RBAC 会完整落地）。
 - 水平越权防护是**每个资源接口**的纪律：「登录了就放行」≠「能访问这条资源」（阶段六安全架构再敲一次）。
 
 ### 5. SSO 与微服务鉴权
@@ -284,40 +324,75 @@ flowchart LR
 
 ### Q1：Spring Security 中一个请求从进入到返回，认证和授权分别由哪些组件完成？
 
-**答**：请求先进 Servlet 过滤器链，其中 `SpringSecurityFilterChain`（本身就是一个 Servlet Filter）接管。认证阶段由 `UsernamePasswordAuthenticationFilter` 等认证过滤器触发 `AuthenticationManager`（实际是 `ProviderManager`，委派给对应的 `AuthenticationProvider`），Provider 通过 `UserDetailsService` 查用户、`PasswordEncoder` 验密码，成功后构造 `Authentication` 放进 `SecurityContextHolder`（ThreadLocal）；授权阶段由 `AuthorizationFilter` 做 URL 级判定（permitAll / authenticated），方法级 `@PreAuthorize` 则由 AOP 在方法调用前用 `AuthorizationManager` 再判一次。
+**答**：请求先进 Servlet 过滤器链，其中 `SpringSecurityFilterChain`（本身就是一个 Servlet Filter）接管。两个阶段分头干：
+- **认证阶段**：由 `UsernamePasswordAuthenticationFilter` 等认证过滤器触发 `AuthenticationManager`（实际是 `ProviderManager`，委派给对应的 `AuthenticationProvider`），Provider 通过 `UserDetailsService` 查用户、`PasswordEncoder` 验密码，成功后构造 `Authentication` 放进 `SecurityContextHolder`（ThreadLocal）。
+- **授权阶段**：由 `AuthorizationFilter` 做 URL 级判定（permitAll / authenticated）；方法级 `@PreAuthorize` 则由 AOP 在方法调用前用 `AuthorizationManager` 再判一次。
 
-原理层：认证解决「你是谁」，产出可信的 `Authentication`；授权解决「你能干什么」，读 SecurityContext 里的权限判定。两者通过 SecurityContext 衔接——认证过滤器先填、授权过滤器后读，插位错误（认证在授权之后）会导致永远匿名。
+原理层：
+- 认证解决「你是谁」，产出可信的 `Authentication`；授权解决「你能干什么」，读 SecurityContext 里的权限判定。
+- 两者通过 SecurityContext 衔接——认证过滤器先填、授权过滤器后读，插位错误（认证在授权之后）会导致永远匿名。
 
-工程层：无状态 JWT 方案里「认证」就是自定义 `JwtAuthFilter` 验签后手动 `setAuthentication`；排查顺序问题先开 DEBUG 级日志看过滤器链实际顺序，别上来就改代码。
+工程层：
+- 无状态 JWT 方案里「认证」就是自定义 `JwtAuthFilter` 验签后手动 `setAuthentication`。
+- 排查顺序问题先开 DEBUG 级日志看过滤器链实际顺序，别上来就改代码。
 
 ### Q2：Session 和 JWT 你选哪个？JWT 的无状态化带来了什么、代价是什么？
 
-**答**：两者都合法，按场景选：有强撤销 / 合规要求、服务端要完全掌控选 Session + Cookie；跨域、多端、移动端友好、要水平扩展免同步选 JWT。JWT 的「无状态」指服务端不存会话——验签通过即信，天然适配水平扩容。
+**答**：两者都合法，按场景选：
+- **选 Session + Cookie**：有强撤销 / 合规要求、服务端要完全掌控时。
+- **选 JWT**：跨域、多端、移动端友好、要水平扩展免同步时。
+- **「无状态」指什么**：服务端不存会话——验签通过即信，天然适配水平扩容。
 
-原理层：JWT 是自包含凭证，签名保证完整性，任何服务端拿密钥验签即可确认身份，不需要查 session 存储；代价正是「服务端不存 = 无法主动作废」：登出要靠黑名单（jti 进 Redis）、泄漏的 token 在过期前都有效、续期要靠双 token（短命 access + 长命 refresh）。
+原理层：
+- JWT 是自包含凭证，签名保证完整性，任何服务端拿密钥验签即可确认身份，不需要查 session 存储。
+- 代价正是「服务端不存 = 无法主动作废」：登出要靠黑名单（jti 进 Redis）、泄漏的 token 在过期前都有效、续期要靠双 token（短命 access + 长命 refresh）。
 
-工程层成熟方案：access 15min + refresh 7d 存 Redis 可撤销，前端 401 静默刷新重试；别把大 payload 塞 JWT（每个请求都带着走）；密钥走配置中心并定期轮换；如果业务处处需要即时撤销（封号、改密踢人），说明状态需求又回来了，Session 反而更简单。
+工程层成熟方案：
+- access 15min + refresh 7d 存 Redis 可撤销，前端 401 静默刷新重试。
+- 别把大 payload 塞 JWT（每个请求都带着走）；密钥走配置中心并定期轮换。
+- 如果业务处处需要即时撤销（封号、改密踢人），说明状态需求又回来了，Session 反而更简单。
 
 ### Q3：JWT 为什么不加密？签名和加密的区别？为什么 token 里不能放敏感信息？
 
 **答**：JWT 的 Payload 只做 Base64 编码，任何人可解码阅读——签名只保证「没被篡改」，不保证「不被看见」：完整性（Integrity）≠ 机密性（Confidentiality）。
 
-原理层：签名用 HMAC（HS256）或非对称（RS256）对 header.payload 计算摘要——对称算法（HS256）签和验用同一把密钥，适合单体服务自签自验；非对称算法（RS256）私钥签、公钥验，适合多服务共享公钥验签。验签通过说明内容未被改动，但内容本身是明文的；要保密得用 JWE（JWT Encryption）整体加密，但那会失去「任意服务端都能验」的轻量性，所以默认方案是「签名不加密」。
+原理层：
+- 签名用 HMAC（HS256）或非对称（RS256）对 header.payload 计算摘要——对称算法（HS256）签和验用同一把密钥，适合单体服务自签自验；非对称算法（RS256）私钥签、公钥验，适合多服务共享公钥验签。
+- 验签通过说明内容未被改动，但内容本身是明文的；要保密得用 JWE（JWT Encryption）整体加密，但那会失去「任意服务端都能验」的轻量性，所以默认方案是「签名不加密」。
 
-工程层：token 里只放 subject（用户 id）、角色、过期时间，绝不放密码 / 手机号 / 身份证；敏感数据放服务端，token 只做「钥匙」。CSRF 之所以不构成威胁，是因为 token 在 Authorization 头由 JS 显式携带（浏览器不会自动附带）；而 XSS 才是 JWT 方案的头号风险——脚本注入可直接窃取 token，所以 CSP、输入输出转义是必配。
+工程层：
+- token 里只放 subject（用户 id）、角色、过期时间，绝不放密码 / 手机号 / 身份证；敏感数据放服务端，token 只做「钥匙」。
+- CSRF 之所以不构成威胁，是因为 token 在 Authorization 头由 JS 显式携带（浏览器不会自动附带）。
+- 而 XSS 才是 JWT 方案的头号风险——脚本注入可直接窃取 token，所以 CSP、输入输出转义是必配。
 
 ### Q4：为什么密码存储用 BCrypt 而不是 MD5 / SHA-256？BCrypt 是怎么工作的？
 
-**答**：MD5 / SHA-256 是「快哈希」——快对密码存储是灾难：GPU 每秒可算数十亿次，配合彩虹表（预计算哈希表）可秒破弱密码。BCrypt 的设计目标就是「刻意慢」：可调的 work factor 让单次哈希耗时指数级上升（默认 10 ≈ 数十到百毫秒级），把离线爆破成本抬高几个数量级。
+**答**：两个原因：
+- MD5 / SHA-256 是「快哈希」——快对密码存储是灾难：GPU 每秒可算数十亿次，配合彩虹表（预计算哈希表）可秒破弱密码。
+- BCrypt 的设计目标就是「刻意慢」：可调的 work factor 让单次哈希耗时指数级上升（默认 10 ≈ 数十到百毫秒级），把离线爆破成本抬高几个数量级。
 
-原理层：BCrypt 每次加密生成随机盐（Salt），盐连同版本、成本参数一起内嵌进密文字符串（`$2a$10$...`）——同密码两次结果不同；盐消灭彩虹表，慢哈希消灭暴力破解；盐不需要单独存储，校验时直接从密文里读出。
+原理层：
+- BCrypt 每次加密生成随机盐（Salt），盐连同版本、成本参数一起内嵌进密文字符串（`$2a$10$...`）——同密码两次结果不同。
+- 盐消灭彩虹表，慢哈希消灭暴力破解；盐不需要单独存储，校验时直接从密文里读出。
 
-工程层：Spring 用 `PasswordEncoder` 抽象，`new BCryptPasswordEncoder()` 即可；work factor 默认 10 别降——降到 4 换来的「登录快」以爆破成本骤降为代价；登录慢先查链路（网络 / DB / 重哈希）而不是降安全；历史库迁移用「旧算法验过 + 新算法重哈希」平滑升级。
+工程层：
+- Spring 用 `PasswordEncoder` 抽象，`new BCryptPasswordEncoder()` 即可；work factor 默认 10 别降——降到 4 换来的「登录快」以爆破成本骤降为代价。
+- 登录慢先查链路（网络 / DB / 重哈希）而不是降安全；历史库迁移用「旧算法验过 + 新算法重哈希」平滑升级。
 
 ### Q5：什么是水平越权和垂直越权？如何系统性防御？
 
-**答**：越权分两类——垂直越权（Vertical Privilege Escalation）：低权限用户访问高权限功能，如普通用户调 admin 接口，靠 RBAC / 方法级鉴权解决；水平越权（Horizontal Privilege Escalation）：同权限用户访问他人数据，如改 URL 里的 orderId 看别人订单，靠「数据归属校验」解决。
+**答**：越权分两类：
+- **垂直越权**（Vertical Privilege Escalation）：低权限用户访问高权限功能，如普通用户调 admin 接口，靠 RBAC / 方法级鉴权解决。
+- **水平越权**（Horizontal Privilege Escalation）：同权限用户访问他人数据，如改 URL 里的 orderId 看别人订单，靠「数据归属校验」解决。
 
-原理层：鉴权分两层——功能层（能不能进这个门，`@PreAuthorize("hasRole('ADMIN')")`）和数据层（这条数据是谁的，`#order.ownerId == authentication.principal.userId`）。常见漏洞根源是只做了登录认证、没做资源级授权——「登录了就放行」≠「能访问这条资源」。
+原理层：
+- 鉴权分两层——**功能层**（能不能进这个门，`@PreAuthorize("hasRole('ADMIN')")`）和**数据层**（这条数据是谁的，`#order.ownerId == authentication.principal.userId`）。
+- 常见漏洞根源是只做了登录认证、没做资源级授权——「登录了就放行」≠「能访问这条资源」。
 
-工程层：①全局基线：接口默认 require authenticated，白名单最小化；②每个资源接口做属主校验，抽公共基类 / 注解避免遗漏；③查询接口一律按当前登录用户过滤，不能前端传 userId 就信；④敏感操作留审计日志；⑤用两个不同角色 / 不同用户的账号做越权扫描（互换 token、遍历资源 id）自动化兜底；⑥复杂数据权限（部门树）再上 ABAC 或数据权限框架，简单场景 Spring EL 表达式足够。
+工程层：
+- ① 全局基线：接口默认 require authenticated，白名单最小化。
+- ② 每个资源接口做属主校验，抽公共基类 / 注解避免遗漏。
+- ③ 查询接口一律按当前登录用户过滤，不能前端传 userId 就信。
+- ④ 敏感操作留审计日志。
+- ⑤ 用两个不同角色 / 不同用户的账号做越权扫描（互换 token、遍历资源 id）自动化兜底。
+- ⑥ 复杂数据权限（部门树）再上 ABAC 或数据权限框架，简单场景 Spring EL 表达式足够。

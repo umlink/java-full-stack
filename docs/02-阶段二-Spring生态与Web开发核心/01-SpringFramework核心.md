@@ -68,8 +68,10 @@ public class HelloController {
 | `@Autowired` | 从容器拿一个 Bean 注入 | 可省略（单构造器），但字段注入是反模式 |
 | `@Configuration` + `@Bean` | 第三方库对象、需要定制逻辑的对象，用这种方式手动声明进容器 | 方法名即 Bean 名；返回值类型决定匹配 |
 | `@Aspect` | 声明切面类（配合 `@Component`） | 忘了 `@Component` 切面不生效 |
-| `@Transactional` | 方法级事务（成功提交/异常回滚） | `this` 自调用、非 public、受检异常（Java 强制要求 try-catch 或 throws 声明才能编译的异常，如 `IOException`；`RuntimeException` 及其子类不强制、叫非受检——前端没这概念，阶段一也没专讲，先记住这个区别）默认不回滚——五大失效场景 |
+| `@Transactional` | 方法级事务（成功提交/异常回滚） | `this` 自调用、非 public、受检异常默认不回滚——五大失效场景 |
 | `ApplicationEventPublisher` | 发布事件 | 监听器默认同步且在事务内，副作用逻辑要用 `@TransactionalEventListener` |
+
+> 注：受检异常=Java 强制要求 try-catch 或 throws 声明才能编译的异常，如 `IOException`，默认不回滚；`RuntimeException` 及其子类不强制、叫非受检——前端没这概念，阶段一也没专讲，先记住这个区别。
 
 ### 常用约定 / 命名提示
 
@@ -106,6 +108,8 @@ flowchart TB
 > **IoC（Inversion of Control，控制反转）**：对象的创建与装配不由你自己 `new`，而是交给容器管理——你只声明「我需要什么」，容器负责「造好并递给你」。NestJS 的 `@Injectable()` + 依赖注入是同一个思想。
 > **AOP（Aspect-Oriented Programming，面向切面编程）**：把日志、事务这类「每个方法都要但每个方法都不该写」的横切逻辑抽出来集中声明。
 > **基线提示**：Boot 4 / Framework 7 基于 Jakarta EE 11，所有 `javax.*` 早已迁移为 `jakarta.*`（`jakarta.servlet`、`jakarta.persistence`……）——看到老博客里的 `javax.*` 要自觉换算。
+
+> **生活类比：从「前台下厨」到「只递清单、厨房全包」**——以前你经营小饭馆，客人点什么菜你就得亲自起灶炒（代码里自己 `new OrderService()`、自己拼好依赖）；现在你只把一张「菜单需求清单」递给厨房，进什么货、怎么配菜、锅碗谁消毒，全由厨房包办，你只负责验收菜品合不合格。换成 Spring：你声明 `@Service`、`@Repository`，在构造器里写一句「我要一个 `OrderRepository`」，容器就负责 new 出对象并双手递来——「创建与装配对象的权力」从你手里反转让给了容器，这叫 IoC（控制反转）；依赖注入（DI）只是这种反转的具体实现方式。
 
 ### 1. IoC 容器
 
@@ -152,6 +156,21 @@ public class HttpClientConfig {
 
 > 对照 NestJS：`@Configuration` + `@Bean` ≈ 自定义 Provider；`@ComponentScan` ≈ NestJS Module 的 `imports` 聚合——差异是 Spring 默认**隐式递归扫描**同包及子包，NestJS 的模块关系**显式声明**。排查「为什么这个 Bean 没被注入」时，Spring 查「扫描路径覆盖没有」，NestJS 查「Module 引了没有」。
 
+一套典型的 Bean 依赖关系长这样——你只在构造器里「点菜」，容器负责上菜：
+
+```mermaid
+classDiagram
+    class C["Controller 控制器"]
+    class S["Service 业务 Bean / @Service"]
+    class R["Repository 数据 Bean / @Repository"]
+    class P["外部服务 Client / RestClient"]
+    C --> S : 构造器注入
+    S --> R : 构造器注入
+    S --> P : 构造器注入
+```
+
+> 图读法：箭头上的「构造器注入」= 容器读到你构造器声明的参数后，自动把对应的 Bean 递进来——全程没有任何一行 `new`。
+
 #### 1.2 Bean 生命周期
 
 ```java
@@ -168,7 +187,7 @@ public class CacheWarmer {
         log.info("缓存预热完成");
     }
 
-    @PreDestroy               // ⑧ 销毁回调：容器关闭时（K8s 滚动更新杀 Pod 前会走到）
+    @PreDestroy               // ⑧ 销毁回调：容器关闭时（K8s——Kubernetes 容器编排平台——滚动更新杀 Pod 前会走到）
     public void cleanup() {
         // 适合做：刷新缓冲、释放连接
     }
@@ -176,6 +195,8 @@ public class CacheWarmer {
 ```
 
 完整顺序（面试口径）：`① 实例化 → ② 属性填充 → ③ Aware 回调（容器「感知」钩子——让 Bean 拿到容器给的名片：我叫什么、我属于谁）→ ④ BeanPostProcessor 前置 → ⑤ 初始化回调 → ⑥ BeanPostProcessor 后置 → ⑦ 就绪使用 → ⑧ @PreDestroy → ⑨ 销毁`，全程像水流过九段管道、每一段都是可插拔的扩展点：
+
+> **生活类比：新员工入职一条龙**——先签合同、领工牌（实例化 + 收到「我叫什么、我属于谁」的名片），再做岗前培训、领设备通网（初始化回调），然后正式上岗接客（就绪使用），离职前交接资料、还工卡（销毁回调）。换成 Spring：Bean 生命九步就是这条入职流水线，每一步都留了「插自定义动作」的卡槽——所以一次性初始化要放 `@PostConstruct`（岗前培训环节），而不是构造器（合同还没签就想上岗，依赖字段还是空的）。
 
 ```mermaid
 flowchart TD
@@ -201,7 +222,7 @@ flowchart TD
 | `prototype` | 每次注入 / 获取都新建 | `scope: Scope.TRANSIENT` |
 | `request` / `session` | 每个 HTTP 请求 / 会话一个实例 | `scope: Scope.REQUEST` |
 
-> 坑：singleton Bean 注入 prototype Bean 时，prototype 只在注入那一刻创建一次——「注入的 prototype 失效」。解法：注入 `ObjectProvider<T>` 按需 `getObject()`。
+> 坑：singleton Bean 注入 prototype Bean 时，prototype 只在注入那一刻创建一次——「注入的 prototype 失效」。解法：注入 `ObjectProvider<T>`（「现点现做」的延迟供应商——先不给你实体，需要时再 `getObject()` 现取一个新实例）按需取用。
 
 > ⏸️ **短期可以不学**：`request` / `session` 作用域在绝大多数业务里用不到（会话状态、租户隔离等特定场景才需要），且它让每个请求都新建 Bean、有额外开销。**何时回来学**：需要「跟随请求/会话」的有状态对象时。**面试最低要求**：能说清 singleton（默认）与 prototype 的区别，知道 request / session 是 Web 场景的扩展作用域即可。
 
@@ -236,7 +257,10 @@ flowchart LR
 > **生活类比：半成品房先挂中介牌**——A 一开工就把自己登记成「半成品房」，在中介（③级缓存）挂个牌子，但**先不装修**（不生成代理）。真有人来买房（循环依赖发生）时，才决定这套房交付成**精装房**（代理对象）还是**毛坯**（原始对象）；没人问就一直挂着，省下装修费。换成 Spring：③级缓存里存的是「工厂」而不是对象本身——工厂的职责就是「到需要的那一刻才决定给你原始对象还是代理」，于是绝大多数不参与循环依赖的 Bean 根本不用提前生成代理。
 
 - 一级缓存 `singletonObjects`：成品 Bean；二级 `earlySingletonObjects`：提前曝光的半成品；三级 `singletonFactories`：**ObjectFactory**——关键在工厂可以延迟决定「返回原始对象还是 AOP 代理」，避免不必要的提前代理。
-- **为什么必须是三级而不是两级**：AOP 代理是 Bean 初始化完成后由 BeanPostProcessor 才生成的，若只有「原始对象缓存」，就无法把代理暴露给循环引用方。若退而求其次用两级并提前生成代理，则每个 Bean 都得在实例化时就把代理造好——绝大多数 Bean 根本不参与循环依赖，白白多一层代理开销。三级缓存让「要不要代理」推迟到真正发生循环依赖的那一刻才做决定。
+- **为什么必须是三级而不是两级**：
+  - 一级 / 二级缓存里存的是「对象」，而 AOP 代理要等 Bean 初始化完成后、由 BeanPostProcessor 才生成——只靠两级，循环引用方根本拿不到代理。
+  - 若退回两级并提前生成代理：每个 Bean 都得在实例化时就把代理造好，而绝大多数 Bean 根本不参与循环依赖，白白多一层代理开销。
+  - 三级缓存放的是「工厂」（延迟决策器），把「返回原始对象还是 AOP 代理」推到真正发生循环依赖那一刻才决定——不参与环的 Bean 连代理都不生成。
 - **构造器注入的循环依赖无解**（Spring 直接启动报错）——这通常是设计问题（职责没拆开），该拆类而不是加 `@Lazy` 绕过。`@Lazy` 能解但要明白它只是把依赖推迟到首次使用。
 
 ### 2. AOP
@@ -273,6 +297,24 @@ public class AuditLogAspect {
 > 通知（Advice）共 5 类，本文示例用的是威力最大的 `@Around`：`@Before`（进门前查）、`@After`（无论成败出门都查）、`@AfterReturning`（正常返回后查）、`@AfterThrowing`（抛异常后查）、`@Around`（完全接管：查 → 放行 → 返回后再查，最强也最危险）。
 
 > 底层就是阶段一第 3 讲的动态代理：容器注入给你的 `OrderService` 实际是**代理对象**——纯 Spring 5 默认「有接口走 JDK 代理、无接口走 CGLIB」；Spring Boot 2+ 默认 `spring.aop.proxy-target-class=true`，**一律用 CGLIB 生成子类**（不需要接口、能代理无接口类），方法调用先进切面链，再透传给真实对象。
+
+一次带切面的方法调用，真实时序是这样的——这也是「自调用失效」的病根：
+
+```mermaid
+sequenceDiagram
+    actor 调用方 as 调用方 Bean
+    participant 代理 as 代理对象<br/>容器注入的替身
+    participant 切面 as 切面<br/>Around 环绕通知
+    participant 真身 as 真实方法<br/>目标方法本身
+
+    调用方->>代理: placeOrder 调用开始
+    代理->>切面: 先过切面链
+    切面->>真身: pjp.proceed 放行
+    真身-->>切面: 返回结果或抛异常
+    切面-->>代理: 后置处理再返回
+    代理-->>调用方: 拿到最终结果
+    Note over 调用方,真身: 类内 this.placeOrder 直接调「真身」<br/>绕过代理与切面 —— 自调用失效
+```
 > 对照 NestJS：能力上 ≈ Interceptor，但 Spring AOP 在**字节码代理层**工作——任何 Bean 方法都能切（包括 Service 内部方法间调用之外的入口），NestJS Interceptor 只包 Controller 路由。
 
 #### 2.2 声明式事务与传播行为
@@ -298,7 +340,13 @@ public class OrderService {
 }
 ```
 
-常用传播行为：`REQUIRED`（默认，有就加入没有就新建）/ `REQUIRES_NEW`（独立新事务——挂起外层并另占一条数据库连接，代价最贵）/ `NESTED`（打**存档点（savepoint，保存点）**——在事务里留一个可回退的标记，回滚只回到标记处、不换连接）/ `SUPPORTS`（有就有没有就没有）。「事务套事务」的三种典型形态，各占几条连接、回滚波及谁，一图看清：
+常用传播行为有四个档位：
+- `REQUIRED`（默认）：有事务就加入、没有就新建——绝大多数业务的默认选择。
+- `REQUIRES_NEW`：挂起外层事务、另开一个独立新事务，同时另占一条数据库连接——代价最贵。
+- `NESTED`：在外层事务里打一个**存档点（savepoint，保存点——可回退的标记）**，内层回滚只回到存档处、不换连接。
+- `SUPPORTS`：有事务就跟着、没有就裸跑，不强制。
+
+「事务套事务」的三种典型形态，各占几条连接、回滚波及谁，一图看清：
 
 ```mermaid
 flowchart LR
@@ -402,6 +450,25 @@ public class OrderPlacedListeners {
 
 > 对照 NestJS 的 EventEmitter：同样是发布订阅，但 Spring 事件**长在事务上**——这是 NestJS 没有的维度，也是阶段四「Outbox / 事件驱动」的本地事务基础。
 
+「事件发出后到底什么时候执行」取决于监听器类型，一张时序看清：
+
+```mermaid
+sequenceDiagram
+    participant S as OrderService<br/>事务方法
+    participant P as 发布器<br/>ApplicationEventPublisher
+    participant L as 同步监听器<br/>EventListener
+    participant T as 提交后监听器<br/>TransactionalEventListener<br/>AFTER_COMMIT
+    participant DB as 数据库
+
+    S->>DB: save 写业务数据
+    S->>P: publishEvent 下单成功
+    P->>L: 同步直接执行<br/>仍在事务内
+    Note over L: 此刻抛异常 → 主事务回滚
+    Note over S: 方法正常结束 → 提交成功
+    DB-->>T: 事务提交后广播
+    Note over T: 此时数据已落库<br/>同步 ES 发通知才安全
+```
+
 ### 4. 资源与环境
 
 ```java
@@ -445,16 +512,70 @@ public class PriceGateway {
 ## 常见面试题
 
 ### Q1：Spring 中 Bean 的生命周期是怎样的？`@PostConstruct`、`InitializingBean`、`init-method` 的执行顺序？
-**答**：标准答案是一串阶段：**实例化（new 出对象）→ 属性填充（注入依赖）→ Aware 回调（如 `BeanNameAware`）→ `BeanPostProcessor.postProcessBeforeInitialization` → 初始化回调（`@PostConstruct` → `InitializingBean.afterPropertiesSet` → `init-method`，三者按此顺序）→ `postProcessAfterInitialization` → 就绪使用 → 销毁（`@PreDestroy` → `destroy`）**。原理层：容器把「创建对象」拆成多个可插拔阶段，每个阶段都留扩展点，`BeanPostProcessor` 是**容器级**流水线，对容器里所有 Bean 生效——Spring 自己的魔法（AOP 代理生成、`@Configuration` 增强）都是挂在这里的。工程层：初始化逻辑放 `@PostConstruct` 而不是构造器——构造器执行时依赖还没注入完，在构造器里用注入字段必踩 NPE；且别把 `BeanPostProcessor` 当业务工具用，它作用于全局、影响面太大。
+**答**：**标准答案**：生命周期是一串可插拔阶段，完整顺序为——
+- 实例化（new 出对象）→ 属性填充（注入依赖）→ Aware 回调（如 `BeanNameAware`）→ `BeanPostProcessor.postProcessBeforeInitialization`
+- 初始化回调：`@PostConstruct` → `InitializingBean.afterPropertiesSet` → `init-method`（三者按此顺序）
+- `postProcessAfterInitialization` → 就绪使用 → 销毁（`@PreDestroy` → `destroy`）
+
+**原理层**：容器把「创建对象」拆成多个可插拔阶段，每个阶段都留扩展点：
+- `BeanPostProcessor` 是**容器级**流水线，对容器里所有 Bean 生效——Spring 自己的魔法（AOP 代理生成、`@Configuration` 增强）都是挂在这里的。
+
+**工程层**：
+- 初始化逻辑放 `@PostConstruct` 而不是构造器——构造器执行时依赖还没注入完，在构造器里用注入字段必踩 NPE。
+- 别把 `BeanPostProcessor` 当业务工具用，它作用于全局、影响面太大。
 
 ### Q2：Spring 是如何解决循环依赖的？为什么构造器注入的循环依赖解决不了？
-**答**：标准答案：A 依赖 B、B 依赖 A 时，Spring 用三级缓存破环——`singletonObjects`（一级，成品）、`earlySingletonObjects`（二级，提前暴露的半成品）、`singletonFactories`（三级，ObjectFactory 工厂）。流程：A 实例化后先把工厂放进三级缓存并提前暴露；B 创建时从三级取工厂拿到 A 的早期引用、完成自己的注入后进入一级；A 再拿成品 B 完成注入。原理层：**为什么是三级而不是两级**——AOP 代理要等 BeanPostProcessor 在初始化后生成，三级缓存把「返回原始对象还是代理」的决策推迟到真正发生循环依赖那一刻，避免所有 Bean 都提前生成代理。工程层：该机制只救得了 setter / 字段注入；构造器注入的环在 Spring 看来是「构造器调用无法提前暴露对象」，直接启动报错——这通常是职责没拆开的设计信号，正确做法是拆类，而不是 `@Lazy` 一刀切绕过。
+**答**：**标准答案**：A 依赖 B、B 依赖 A 时，Spring 用三级缓存破环——
+- 三级：`singletonObjects`（一级，成品）、`earlySingletonObjects`（二级，提前暴露的半成品）、`singletonFactories`（三级，ObjectFactory 工厂）。
+- 流程：A 实例化后先把工厂放进三级缓存并提前暴露 → B 创建时从三级取工厂拿到 A 的早期引用、完成自己的注入后进入一级 → A 再拿成品 B 完成注入。
+
+**原理层**：为什么是三级而不是两级——
+- AOP 代理要等 BeanPostProcessor 在初始化后生成，三级缓存把「返回原始对象还是代理」的决策推迟到真正发生循环依赖那一刻，避免所有 Bean 都提前生成代理。
+
+**工程层**：
+- 该机制只救得了 setter / 字段注入；构造器注入的环在 Spring 看来是「构造器调用无法提前暴露对象」，直接启动报错。
+- 这通常是职责没拆开的设计信号，正确做法是拆类，而不是 `@Lazy` 一刀切绕过。
 
 ### Q3：`@Transactional` 有哪些常见的失效场景？
-**答**：标准答案五大场景：①**自调用**——同类里 `this.method()` 走的是原始对象而非代理，切面没机会介入；②**非 public 方法**——代理默认只拦截 public；③**异常被吞**——try-catch 里把异常吃掉了，切面看不到异常照常提交；④**受检异常默认不回滚**——抛 `Exception`（checked）不触发回滚，需显式 `rollbackFor`；⑤**多线程边界**——事务上下文绑定在 ThreadLocal，在事务方法里开子线程做 DB 操作，子线程不在同一事务。原理层：`@Transactional` = 代理对象上的环绕切面 + ThreadLocal 绑定的连接/事务上下文，凡是让「调用绕过代理」或「执行换了线程」的写法都会失效。工程层：自调用优先拆类；业务异常一律自定义 `RuntimeException`（如 `BizException`），天然默认回滚，别依赖 `rollbackFor` 兜底；`@Transactional` 只标在 public 方法上。
+**答**：**标准答案**：五大失效场景——
+- ① **自调用**：同类里 `this.method()` 走的是原始对象而非代理，切面没机会介入。
+- ② **非 public 方法**：代理默认只拦截 public。
+- ③ **异常被吞**：try-catch 里把异常吃掉了，切面看不到异常照常提交。
+- ④ **受检异常默认不回滚**：抛 `Exception`（checked）不触发回滚，需显式 `rollbackFor`。
+- ⑤ **多线程边界**：事务上下文绑定在 ThreadLocal，在事务方法里开子线程做 DB 操作，子线程不在同一事务。
+
+**原理层**：`@Transactional` = 代理对象上的环绕切面 + ThreadLocal 绑定的连接/事务上下文，凡是让「调用绕过代理」或「执行换了线程」的写法都会失效。
+
+**工程层**：
+- 自调用优先拆类。
+- 业务异常一律自定义 `RuntimeException`（如 `BizException`），天然默认回滚，别依赖 `rollbackFor` 兜底。
+- `@Transactional` 只标在 public 方法上。
 
 ### Q4：`REQUIRED`、`REQUIRES_NEW`、`NESTED` 三种传播行为有什么区别？各自适合什么场景？
-**答**：标准答案：`REQUIRED`（默认）有事务就加入、没有就新建；`REQUIRES_NEW` 挂起外层事务、开一个全新的独立事务；`NESTED` 在外层事务里建**保存点（savepoint）**，内层回滚只回滚到保存点、不影响外层。原理层：`REQUIRES_NEW` 会另占一条数据库连接，内外层互不可见、必须等内层提交外层才能提交——代价最贵；`NESTED` 不换连接，靠数据库保存点实现「部分回滚」，代价低。工程层：操作审计日志用 `REQUIRES_NEW`——「主事务回滚了日志也要留下」；某个失败不影响全局的步骤（如批量处理中的单项失败）用 `NESTED`；绝大多数业务用默认 `REQUIRED` 就够了，别滥用前两者——连接被多占、长事务风险都随之而来。
+**答**：**标准答案**：三种传播行为——
+- `REQUIRED`（默认）：有事务就加入、没有就新建。
+- `REQUIRES_NEW`：挂起外层事务、开一个全新的独立事务。
+- `NESTED`：在外层事务里建**保存点（savepoint）**，内层回滚只回滚到保存点、不影响外层。
+
+**原理层**：
+- `REQUIRES_NEW` 会另占一条数据库连接，内外层互不可见、必须等内层提交外层才能提交——代价最贵。
+- `NESTED` 不换连接，靠数据库保存点实现「部分回滚」，代价低。
+
+**工程层**：
+- 操作审计日志用 `REQUIRES_NEW`——「主事务回滚了日志也要留下」。
+- 某个失败不影响全局的步骤（如批量处理中的单项失败）用 `NESTED`。
+- 绝大多数业务用默认 `REQUIRED` 就够了，别滥用前两者——连接被多占、长事务风险都随之而来。
 
 ### Q5：Spring AOP 默认用 JDK 动态代理还是 CGLIB？两者有什么区别？
-**答**：标准答案：纯 Spring（Framework）默认「目标有接口走 JDK 动态代理、无接口走 CGLIB」；**Spring Boot 2+ 默认 `spring.aop.proxy-target-class=true`，一律用 CGLIB**。原理层：JDK 代理基于接口在运行时生成代理类、用反射调用目标方法，要求目标必须实现接口；CGLIB 基于字节码生成目标类的**子类**，不要求接口，但 `final` 类 / `final` 方法无法被继承增强。工程层：Boot 默认 CGLIB 是为了「不需要接口也能被切面覆盖」，代价是别把切面目标方法标成 `final`；这也是 `@Transactional` 失效场景的一个隐蔽变体——方法标了 `final`，CGLIB 增强不到，事务静默失效。判断线上用的是哪种，看启动日志里的 `proxyTargetClass` 或 DEBUG 日志即可。
+**答**：**标准答案**：代理方案按来源分——
+- 纯 Spring（Framework）默认「目标有接口走 JDK 动态代理、无接口走 CGLIB」。
+- **Spring Boot 2+ 默认 `spring.aop.proxy-target-class=true`，一律用 CGLIB**。
+
+**原理层**：
+- JDK 代理基于接口在运行时生成代理类、用反射调用目标方法，要求目标必须实现接口。
+- CGLIB 基于字节码生成目标类的**子类**，不要求接口，但 `final` 类 / `final` 方法无法被继承增强。
+
+**工程层**：
+- Boot 默认 CGLIB 是为了「不需要接口也能被切面覆盖」，代价是别把切面目标方法标成 `final`。
+- 这也是 `@Transactional` 失效场景的一个隐蔽变体——方法标了 `final`，CGLIB 增强不到，事务静默失效。
+- 判断线上用的是哪种，看启动日志里的 `proxyTargetClass` 或 DEBUG 日志即可。
