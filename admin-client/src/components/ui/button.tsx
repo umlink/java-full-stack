@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- shadcn 组件需同时导出变体，供复用的组合控件使用。 */
 import { Button as ButtonPrimitive } from "@base-ui/react/button"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
