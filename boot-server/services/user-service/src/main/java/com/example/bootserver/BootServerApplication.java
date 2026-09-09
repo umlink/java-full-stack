@@ -1,4 +1,4 @@
-package com.example.bootapp;
+package com.example.bootserver;
 
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
@@ -11,10 +11,10 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * 启动后内嵌 Tomcat 监听 8080，应用启动时自动执行 schema.sql 完成建表。
  */
 @SpringBootApplication
-@MapperScan("com.example.bootapp.mapper")
-public class BootAppApplication {
+@MapperScan("com.example.bootserver.mapper")
+public class BootServerApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(BootAppApplication.class, args);
+        SpringApplication.run(BootServerApplication.class, args);
     }
 }

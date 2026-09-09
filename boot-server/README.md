@@ -30,8 +30,8 @@ boot-server/
     └── user-service/                # 用户服务（后续 order-service 等平级并列）
         ├── pom.xml
         └── src/main/
-            ├── java/com/example/bootapp/
-            │   ├── BootAppApplication.java   # 入口（@SpringBootApplication）
+            ├── java/com/example/bootserver/
+            │   ├── BootServerApplication.java # 入口（@SpringBootApplication）
             │   ├── controller/UserController # REST CRUD（统一响应体）
             │   ├── service/UserService       # 业务层（MP ServiceImpl）
             │   ├── mapper/UserMapper         # 数据层（MP BaseMapper）
@@ -51,7 +51,7 @@ boot-server/
 **方式一：IDEA（推荐）**
 1. `File → Open` 选择 `boot-server/pom.xml`，以 Maven 工程打开（IDEA 自动识别 wrapper 与 JDK）
 2. 首次打开等待依赖下载（国内网络慢可先配阿里云镜像，见[阶段零 02 讲](../docs/00-阶段零-起点盘点与补课/02-工程环境清单.md)）
-3. 直接运行 `BootAppApplication` 的 main 方法
+3. 直接运行 `BootServerApplication` 的 main 方法
 
 **方式二：命令行（无需安装 Maven）**
 

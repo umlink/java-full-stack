@@ -1,8 +1,8 @@
-package com.example.bootapp;
+package com.example.bootserver;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.example.bootapp.entity.User;
-import com.example.bootapp.mapper.UserMapper;
+import com.example.bootserver.entity.User;
+import com.example.bootserver.mapper.UserMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -20,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
         "spring.datasource.url=jdbc:h2:mem:bootapp-test;MODE=MySQL",
         "spring.sql.init.mode=always"
 })
-class BootAppApplicationTests {
+class BootServerApplicationTests {
 
     @Autowired
     private UserMapper userMapper;

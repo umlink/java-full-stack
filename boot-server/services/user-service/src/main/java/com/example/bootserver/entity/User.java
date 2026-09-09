@@ -1,4 +1,4 @@
-package com.example.bootapp.entity;
+package com.example.bootserver.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;

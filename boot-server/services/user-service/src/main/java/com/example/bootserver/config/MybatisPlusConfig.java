@@ -1,4 +1,4 @@
-package com.example.bootapp.config;
+package com.example.bootserver.config;
 
 import com.baomidou.mybatisplus.annotation.DbType;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;

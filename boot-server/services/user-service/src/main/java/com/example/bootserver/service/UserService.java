@@ -1,8 +1,8 @@
-package com.example.bootapp.service;
+package com.example.bootserver.service;
 
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
-import com.example.bootapp.entity.User;
-import com.example.bootapp.mapper.UserMapper;
+import com.example.bootserver.entity.User;
+import com.example.bootserver.mapper.UserMapper;
 import org.springframework.stereotype.Service;
 
 /**

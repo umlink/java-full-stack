@@ -1,10 +1,11 @@
-package com.example.bootapp.controller;
+package com.example.bootserver.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.example.bootapp.common.result.Result;
-import com.example.bootapp.entity.User;
-import com.example.bootapp.service.UserService;
+import com.example.bootserver.common.error.ErrorCode;
+import com.example.bootserver.common.result.Result;
+import com.example.bootserver.entity.User;
+import com.example.bootserver.service.UserService;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -58,7 +59,8 @@ public class UserController {
     @GetMapping("/{id}")
     public Result<User> get(@PathVariable Long id) {
         User user = userService.getById(id);
-        return user == null ? Result.fail(40400, "用户不存在") : Result.ok(user);
+        // 具体文案可以描述用户资源，但业务码统一从 ErrorCode 读取，避免 Controller 散落魔法数字。
+        return user == null ? Result.fail(ErrorCode.NOT_FOUND, "用户不存在") : Result.ok(user);
     }
 
     /** 新增：POST /api/users（body 传 JSON，如 {"name":"Dave","email":"dave@example.com","age":32}） */
