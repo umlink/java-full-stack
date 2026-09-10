@@ -9,6 +9,7 @@
 - MyBatis-Plus 3.5.17。
 - Maven 使用本目录 `mvnw` / `mvnw.cmd`。
 - 后端包名前缀：`com.example.bootserver`。
+- 依赖版本：Spring Boot BOM 已管理的依赖只在使用模块声明；BOM 未管理的第三方依赖在父 pom `dependencyManagement` 集中锁定版本，子模块不重复写版本。
 
 常用命令：
 
@@ -221,3 +222,11 @@ XML 规范：
 - 对事务、权限、异常转换、隐式 ORM 行为写必要说明。
 - 注释必须解释边界和原因，不重复代码字面含义。
 - 过期注释必须随实现删除或更新。
+
+## 14. 通用编码约定
+
+- 禁止 `Executors.newFixedThreadPool` / `newCachedThreadPool`，一律显式 `new ThreadPoolExecutor`（对齐阶段零 02 讲阿里规约）。
+- POJO 属性使用包装类型。
+- 日志使用 `{}` 占位符，禁止字符串拼接。
+- Bean 优先构造器注入。
+- 命名驼峰语义化。

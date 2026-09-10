@@ -6,7 +6,6 @@
 > 迁移的是**心智模型**，重学的是**语法与生态** —— 主线约 9 个月，覆盖从 JVM 到云原生的完整工程能力栈
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
-![Docs: 65](https://img.shields.io/badge/Docs-65-blue)
 ![Stages: 8](https://img.shields.io/badge/Stages-0%E2%80%938-orange)
 
 </div>
@@ -68,10 +67,11 @@ java-full-stack/
 │   ├── 06-阶段六-架构设计与服务端思维/         # 阶段 6：架构设计
 │   ├── 07-阶段七-全栈融合与项目实战/           # 阶段 7：全栈实战
 │   ├── 08-阶段八-数据库专家/                  # 阶段 8：数据库专家
-│   ├── 09-配套学习资源清单.md                 # 书籍 / 课程 / 文档资源
+│   ├── 配套学习资源清单.md                    # 书籍 / 课程 / 文档资源
 │   └── 10-实战产品蓝图/                      # BootMall 贯穿实战：分主题蓝图与实践计划
 ├── LICENSE                                   # MIT 许可证
-├── CLAUDE.md                                 # AI 协作规范（文档写作 / 工程红线）
+├── AGENTS.md                                 # 仓库总控规则（单卡闭环 / 红线 / Git 工作流）
+├── CLAUDE.md                                 # Claude Code 入口（技术基线 / 规则索引）
 ├── LEARNING.md                               # AI 协助式学习方法论（陪练式学习六模式）
 └── README.md
 ```

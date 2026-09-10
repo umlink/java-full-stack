@@ -9,11 +9,11 @@ BootMall C 端商城，技术栈为 React 19、TypeScript、Vite、Tailwind CSS 
 ## 命令
 
 ```bash
-npm install
-npm run dev
-npm run typecheck
-npm run lint
-npm run build
+pnpm install
+pnpm dev
+pnpm typecheck
+pnpm lint
+pnpm build
 ```
 
 项目级开发规则见 [user-client/AGENTS.md](AGENTS.md)；通用前端规范见 [前端开发规范](../docs/10-实战产品蓝图/前端开发规范.md)。
