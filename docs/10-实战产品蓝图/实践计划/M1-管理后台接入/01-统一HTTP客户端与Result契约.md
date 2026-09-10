@@ -1,6 +1,6 @@
 # M1-C-01：统一 HTTP 客户端与 Result 契约
 
-状态：**待开始**  前置：M1-C-00 已完成
+状态：**已完成**  前置：M1-C-00 已完成
 
 返回 [管理后台任务列表](README.md)。
 
@@ -31,8 +31,14 @@
 
 ## 完成记录
 
-日期：
+日期：2026-09-10
 
-提交：
+提交：待用户确认后提交
 
 测试与页面证据：
+
+- `pnpm typecheck`、`pnpm lint`、`pnpm build` 全部通过。
+- 经 Vite dev server 同源代理（`/api` → 本地后端）真实调用公开接口：`POST /auth/register` 返回 `Result<Long>`（`data` 解包验证）；`POST /auth/login` 成功并解包出 `accessToken` 与 `expiresAt`。
+- 错误凭据登录返回 HTTP 401 + `code:40100`「用户名或密码错误」，折叠为 `business` 类 `ApiError`；后端停机时代理返回 502，折叠为 `http` 类「服务暂时不可用，请稍后重试」；均为页面可直接展示的受控文案。
+- 实现物：`lib/env.ts`（`VITE_API_BASE_URL` 唯一读取入口）、`lib/request.ts`（`Result<T>` + `ApiError` 三分类 + `request<T>()`）、`api/modules/login.ts` + `type.d.ts`、`api/API.d.ts` 统一类型出口；登录页「检查后端连接」探针为临时验证载体，M1-C-02 由登录表单取代。
+- 页面级浏览器确认与 M1-C-02 的登录页浏览器验证合并进行。

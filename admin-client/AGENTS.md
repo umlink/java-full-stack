@@ -18,7 +18,7 @@
 ## 2. 当前边界
 
 - 当前主线：M1-C 管理后台接入。
-- 当前待开始卡片：`M1-C-01：统一 HTTP 客户端与 Result 契约`。
+- 当前待开始卡片：`M1-C-02：登录页与 JWT 会话`。
 - 后端接口文档：`http://localhost:8080/api/swagger-ui/index.html`。
 - API 基础地址只从 `VITE_API_BASE_URL` 读取。
 - 不创建 Mock 业务数据替代后端契约。
@@ -31,6 +31,8 @@ src/
   App.tsx
   main.tsx
   router.tsx
+  api/
+    modules/
   assets/
   components/
     ui/
@@ -61,7 +63,7 @@ src/
 
 ## 5. HTTP 与认证
 
-- 统一 HTTP 客户端放 `src/lib/`。
+- 统一 HTTP 客户端放 `src/lib/`；接口定义按业务模块放 `src/api/modules/`，统一类型出口 `src/api/API.d.ts`。
 - 页面和 service Hook 禁止直接解析 `Result<T>`。
 - JWT 只存 `sessionStorage`。
 - token 读写必须封装。

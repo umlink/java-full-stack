@@ -1,4 +1,4 @@
-import { ArrowRight, ShieldCheck } from "lucide-react"
+import { ArrowRight, Loader2, ShieldCheck } from "lucide-react"
 import { Link } from "react-router-dom"
 
 import { Button } from "@/components/ui/button"
@@ -12,9 +12,12 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
+import { useLoginService } from "@/pages/Login/useLoginService"
 
-/** 登录页在本卡仅建立界面与路由；提交、会话与跳转由 M1-C-02 实现。 */
+/** 登录页：字段校验、提交中、失败提示与成功跳转由 useLoginService 编排。 */
 export function LoginPage() {
+  const loginService = useLoginService()
+
   return (
     <main className="grid min-h-svh place-items-center bg-muted/30 p-4 sm:p-6">
       <Card className="w-full max-w-md">
@@ -26,15 +29,56 @@ export function LoginPage() {
           <CardDescription>使用管理账号进入运营工作台。</CardDescription>
         </CardHeader>
         <CardContent className="gap-5">
-          <div className="grid gap-2">
-            <Label htmlFor="username">用户名</Label>
-            <Input disabled id="username" placeholder="请输入用户名" />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="password">密码</Label>
-            <Input disabled id="password" placeholder="请输入密码" type="password" />
-          </div>
-          <Button disabled>登录</Button>
+          <form
+            className="grid gap-5"
+            onSubmit={(event) => {
+              // 阻止原生提交刷新页面；submit 自带空值拦截，不会发出明显无效请求
+              event.preventDefault()
+              void loginService.submit({
+                username: loginService.username,
+                password: loginService.password,
+              })
+            }}
+          >
+            <div className="grid gap-2">
+              <Label htmlFor="username">用户名</Label>
+              <Input
+                aria-invalid={loginService.fieldErrors.username != null}
+                autoComplete="username"
+                id="username"
+                onChange={(event) => loginService.handleUsernameChange(event.target.value)}
+                placeholder="请输入用户名"
+                value={loginService.username}
+              />
+              {loginService.fieldErrors.username && (
+                <p className="text-sm text-destructive">{loginService.fieldErrors.username}</p>
+              )}
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="password">密码</Label>
+              <Input
+                aria-invalid={loginService.fieldErrors.password != null}
+                autoComplete="current-password"
+                id="password"
+                onChange={(event) => loginService.handlePasswordChange(event.target.value)}
+                placeholder="请输入密码"
+                type="password"
+                value={loginService.password}
+              />
+              {loginService.fieldErrors.password && (
+                <p className="text-sm text-destructive">{loginService.fieldErrors.password}</p>
+              )}
+            </div>
+            <Button disabled={loginService.isSubmitting} type="submit">
+              {loginService.isSubmitting && (
+                <Loader2 aria-hidden="true" className="animate-spin" />
+              )}
+              {loginService.isSubmitting ? "登录中…" : "登录"}
+            </Button>
+            {loginService.errorMessage && (
+              <p className="text-sm text-destructive">{loginService.errorMessage}</p>
+            )}
+          </form>
           <Separator />
           <Button render={<Link to="/users" />} variant="ghost">
             返回管理工作台
