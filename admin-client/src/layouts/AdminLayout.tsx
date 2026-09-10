@@ -1,5 +1,5 @@
-import { LayoutDashboard, Store, Users } from "lucide-react"
-import { Link, NavLink, Outlet, useLocation } from "react-router-dom"
+import { LayoutDashboard, LogOut, Store, Users } from "lucide-react"
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom"
 
 import {
   Avatar,
@@ -7,6 +7,7 @@ import {
   AvatarFallback,
 } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import {
   Sidebar,
   SidebarContent,
@@ -23,6 +24,7 @@ import {
   SidebarRail,
   SidebarTrigger,
 } from "@/components/ui/sidebar"
+import { clearToken } from "@/lib/authSession"
 
 const navigationItems = [
   { label: "概览", icon: LayoutDashboard, to: "/" },
@@ -32,6 +34,12 @@ const navigationItems = [
 /** 管理后台使用 shadcn Sidebar 承载导航，业务页面仅填充 Outlet 内容区域。 */
 export function AdminLayout() {
   const { pathname } = useLocation()
+  const navigate = useNavigate()
+
+  function logout() {
+    clearToken()
+    navigate("/login", { replace: true })
+  }
 
   return (
     <SidebarProvider>
@@ -67,6 +75,10 @@ export function AdminLayout() {
         </SidebarContent>
         <SidebarFooter>
           <Badge variant="secondary">管理控制台</Badge>
+          <Button className="justify-start" onClick={logout} variant="ghost">
+            <LogOut aria-hidden="true" />
+            退出登录
+          </Button>
         </SidebarFooter>
         <SidebarRail />
       </Sidebar>

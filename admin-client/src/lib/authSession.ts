@@ -19,7 +19,7 @@ export function getToken(): string | null {
   return sessionStorage.getItem(TOKEN_KEY)
 }
 
-/** 登出或令牌失效时清除；M1-C-03 的 401 处理会复用本函数 */
+/** 登出或令牌失效时清除；M1-C-03 的退出登录会复用本函数 */
 export function clearToken(): void {
   sessionStorage.removeItem(TOKEN_KEY)
 }
