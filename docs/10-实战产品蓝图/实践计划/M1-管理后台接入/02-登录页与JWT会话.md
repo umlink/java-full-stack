@@ -1,6 +1,6 @@
 # M1-C-02：登录页与 JWT 会话
 
-状态：**未解锁**  前置：M1-C-01 已完成
+状态：**已完成**  前置：M1-C-01 已完成
 
 返回 [管理后台任务列表](README.md)。
 
@@ -31,8 +31,14 @@
 
 ## 完成记录
 
-日期：
+日期：2026-09-10
 
-提交：
+提交：待用户确认后提交
 
 测试与页面证据：
+
+- `pnpm typecheck`、`pnpm lint`、`pnpm build` 全部通过。
+- 实现物：`lib/authSession.ts`（`saveToken` / `getToken` / `clearToken`，键 `bootmall.admin.accessToken`，页面不直接触碰 `sessionStorage`）、`pages/Login/index.tsx`（受控表单、字段校验、提交中、失败与成功状态）、`pages/Login/useLoginService.ts`（页面私有编排：校验 → 调接口 → 写会话 → 跳转）。
+- 经 Vite dev server 同源代理真实调用后端：`POST /auth/login` 正确凭据返回 `Result<LoginResponse>`（`accessToken` + `expiresAt`）；错误密码与不存在账号**均**返回 HTTP 401 + `code:40100`「用户名或密码错误」，前端折叠为 `business` 类 `ApiError` 后只取 `message` 展示，账号枚举与服务端细节不外泄。
+- headless Chrome（CDP 驱动真实浏览器）10 项检查全部通过：错误凭据不写入任何凭据、展示受控文案且页面无令牌、提交中按钮禁用并切换为「登录中…」、成功后写入会话并跳转 `/users`、URL 不含令牌、刷新后凭据仍可读取、新标签会话中无凭据（等价于关闭标签后消失）。
+- 移动端 375×812 下 `/login` 与 `/users` 均无横向溢出。

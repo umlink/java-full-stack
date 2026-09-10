@@ -18,7 +18,7 @@
 ## 2. 当前边界
 
 - 当前主线：M1-C 管理后台接入。
-- 当前待开始卡片：`M1-C-02：登录页与 JWT 会话`。
+- 当前待开始卡片：`M1-C-03：认证路由守卫`。
 - 后端接口文档：`http://localhost:8080/api/swagger-ui/index.html`。
 - API 基础地址只从 `VITE_API_BASE_URL` 读取。
 - 不创建 Mock 业务数据替代后端契约。

@@ -4,7 +4,7 @@ BootMall B 端管理后台，技术栈为 React 19、TypeScript、Vite、Tailwin
 
 ## 当前进度
 
-后端 M1 的注册、登录、JWT、RBAC 与 OpenAPI 已完成。`00-管理后台路由与应用壳`、`01-统一 HTTP 客户端与 Result 契约`（含 `api/` 接口层）已完成；当前待开始的是 [M1-C 管理后台接入](../docs/10-实战产品蓝图/实践计划/M1-管理后台接入/README.md) 的 `02-登录页与 JWT 会话`，必须按卡片顺序实施。
+后端 M1 的注册、登录、JWT、RBAC 与 OpenAPI 已完成。`00-管理后台路由与应用壳`、`01-统一 HTTP 客户端与 Result 契约`（含 `api/` 接口层）、`02-登录页与 JWT 会话` 已完成；当前待开始的是 [M1-C 管理后台接入](../docs/10-实战产品蓝图/实践计划/M1-管理后台接入/README.md) 的 `03-认证路由守卫`，必须按卡片顺序实施。
 
 已有后端接口文档：`http://localhost:8080/api/swagger-ui/index.html`。开发时 `VITE_API_BASE_URL=/api`（复制 `.env.example` 为 `.env`），由 Vite dev server 同源代理转发到本地后端；本机 8080 被占用时用 `BACKEND_ORIGIN=http://localhost:8082 pnpm dev` 覆盖代理目标。不要在页面中硬编码地址。
 
