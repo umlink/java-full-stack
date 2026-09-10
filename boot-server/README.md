@@ -4,6 +4,8 @@
 
 配套客户端位于仓库根目录：`admin-client/` 对应 B 端管理后台，`user-client/` 对应 C 端商城。两者均已初始化为独立 React + TypeScript + Vite 工程，但尚未接入本服务；B 端在 M1 认证与授权验收后接入，C 端在 M2 交易核心验收后接入。
 
+后端项目级开发规则见 [boot-server/AGENTS.md](AGENTS.md)，其中包含 Java 分层、MyBatis-Plus、手写 SQL、事务、测试和数据库配置规范。
+
 仓库 [docs/](../docs/README.md) 里学习路线（阶段零 → 阶段八）的**实操落点**：
 文档教概念，这个工程给你「跑得起来的最小样例」。当前版本覆盖阶段零/阶段二的基础知识。
 

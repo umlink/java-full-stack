@@ -42,4 +42,4 @@ npm run lint
 npm run build
 ```
 
-前端目录、命名、请求、认证与验收规范见仓库根目录 [AGENTS.md](../AGENTS.md) 与 [前端开发规范](../docs/10-实战产品蓝图/前端开发规范.md)。
+项目级开发规则见 [admin-client/AGENTS.md](AGENTS.md)；通用前端规范见 [前端开发规范](../docs/10-实战产品蓝图/前端开发规范.md)。

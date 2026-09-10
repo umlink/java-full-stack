@@ -1,174 +1,61 @@
 # AGENTS.md
 
-本文件是本仓库中 AI 编码代理的执行手册。目标是让每次修改都服务于学习闭环：范围小、可验证、可追溯。通用文档写作规范与红线以 [CLAUDE.md](CLAUDE.md) 为准；本文件侧重实际开发流程。
+本文件是仓库级总控规则。进入子目录工作时，必须同时读取对应子项目的 `AGENTS.md`。
 
-## 1. 权威来源与当前节奏
+## 1. 权威来源
 
 1. `docs/` 是学习内容与技术决策的权威来源。
 2. `docs/10-实战产品蓝图/实践计划/` 是实战任务状态与执行顺序的权威来源。
-3. 开始编码前，先读取当前里程碑的任务列表，只实现前置已完成且状态为“待开始”的第一张卡片。
-4. 一张卡片只交付一个可感知行为；不要提前创建后续的表、接口、依赖或安全配置。
-5. 测试通过后，更新卡片“完成记录”、里程碑任务列表和上层进度；未验证的内容不得标记完成。
+3. 编码前先读取当前实践卡片，只实现前置已完成且状态为“待开始”的第一张卡片。
+4. 一张卡片只交付一个可感知行为；禁止顺手实现后续卡片。
+5. 测试通过后，才能更新完成记录、任务列表和上层进度。
 
-当前开发主线是 BootMall 的 M1-C 管理后台接入。当前唯一待开始卡片为 [M1-C-01：统一 HTTP 客户端与 Result 契约](docs/10-实战产品蓝图/实践计划/M1-管理后台接入/01-统一HTTP客户端与Result契约.md)；M2 交易核心尚待拆分，不得提前编码。
+当前主线：BootMall 的 `M1-C 管理后台接入`。当前唯一待开始卡片为 [M1-C-01：统一 HTTP 客户端与 Result 契约](docs/10-实战产品蓝图/实践计划/M1-管理后台接入/01-统一HTTP客户端与Result契约.md)。
 
-### 蓝图开发节奏
-
-每张实践卡片都按下面的单卡闭环推进，建议在 0.5 至 2 天内完成：
-
-1. **读卡定界**：阅读目标、范围、学习点、验收和“不做”；把本次只解决的一个用户可感知行为说清楚。
-2. **规范前置**：只要本卡首次引入或实质使用某项技术能力（例如事务、缓存、消息、认证授权、文件上传、并发、数据库迁移、OpenAPI），先回到本文件补充该能力的分层、命名、安全、测试和运维约束；规则落盘后才能开始编码。若已有规则不适用，应先修正规则，而不是让实现绕过规则。
-3. **建立契约**：先确定接口输入输出、错误分支和最小测试场景；涉及框架机制时，先阅读卡片关联的学习文档。
-4. **最小实现**：只改为达成验收所必需的模块。新增表、依赖、接口、权限配置或前端页面必须在本卡范围内，否则记录为下一张卡片。
-5. **验证复盘**：先跑自动化测试，再按卡片执行一条真实接口或等价 Web 层验证；检查成功路径和本卡指定的失败路径。
-6. **记账收口**：仅在验证通过后更新完成记录、任务列表和上层进度。提交与推送需要用户明确要求。
-
-停止条件同样重要：达到本卡 DoD 后立即停止，不顺带实现下一张卡片；发现需要多个行为才能完成的需求时，先拆成新的卡片或写明阻塞，而不是用一次大改动跨越里程碑。
-
-## 2. 仓库结构与职责
+## 2. 仓库结构
 
 ```text
-admin-client/       B 端管理后台，React + TypeScript + Vite
-user-client/        C 端商城，React + TypeScript + Vite
+admin-client/       B 端管理后台
+user-client/        C 端商城
 boot-server/        Spring Boot 后端聚合工程
-  infrastructure/common-core/  纯 Java 公共能力，不依赖 Spring
-  services/user-service/       当前可运行的业务服务
 docs/               学习路线、产品蓝图和实践卡片
 ```
 
-- 后端包名前缀使用 `com.example.bootserver`；工程目录、Maven 父工程与 Spring 应用名使用 `boot-server`。Java 包名不使用连字符，因此以 `bootserver` 对应工程名。
-- `common-core` 只放跨服务复用的领域无关能力，例如 `Result`、错误码和业务异常；不要把 Spring MVC、数据库或具体业务实现放入其中。
-- HTTP 协议适配放在服务模块，例如 Controller、DTO、`@RestControllerAdvice` 和安全配置。
-- 业务规则放在 Service，Mapper 只负责数据访问；新增或改造的接口不在 Controller 直接拼装业务失败分支。现有用户详情的 404 迁移属于 M1-03，完成前不要越过卡片顺序调整它。
-- 前端项目尚未接入 API。只有对应后端卡片的 DoD 通过后，才开始创建前端业务页面或接口调用。
+子项目规则：
 
-## 3. Java 开发与验证
+- 后端开发：读取 [boot-server/AGENTS.md](boot-server/AGENTS.md)。
+- B 端前端：读取 [admin-client/AGENTS.md](admin-client/AGENTS.md)。
+- C 端前端：读取 [user-client/AGENTS.md](user-client/AGENTS.md)。
+- 文档维护：读取 [docs/AGENTS.md](docs/AGENTS.md)。
 
-### 环境基线
+## 3. 单卡闭环
 
-- JDK：Java 25。
-- 构建工具：使用 `boot-server/mvnw`，不要要求全局 Maven。
-- Spring Boot 4.0.0、MyBatis-Plus 3.5.17；新增依赖须在 `boot-server/pom.xml` 的 `dependencyManagement` 集中管理版本。
+1. 读卡定界：确认目标、范围、验收和“不做”。
+2. 规范前置：首次引入技术能力前，先补对应子项目规则。
+3. 建立契约：先确定输入输出、错误分支和最小测试场景。
+4. 最小实现：只改达成验收所必需的模块。
+5. 验证复盘：运行自动化测试和卡片要求的真实验证。
+6. 记账收口：验证通过后更新实践卡片与进度。
 
-### Java 命名与公开 API
+## 4. 全局红线
 
-- 所有标识符使用 ASCII 与 `lowerCamelCase`；类型使用 `UpperCamelCase`，常量使用 `UPPER_SNAKE_CASE`。缩写按单词处理，写 `userId`、`jwtToken`、`apiUrl`，不写 `userID`、`JWTToken`、`APIURL`。
-- 方法名必须是动词或动词短语，并表达可观察意图；禁止以 `doXxx`、`handleXxx`、`processXxx` 等没有领域语义的泛化动词命名。
-- Controller 的公开方法采用“动作 + 资源 + 条件”模式，即使类名已表明资源也不要只写 `get()`、`list()`、`page()` 或 `byName()`：查询用 `getUserById`、`listUsersByPage`、`searchUsersByName`，命令用 `createUser`、`updateUser`、`deleteUser`，当前身份用 `getCurrentUserId`。
-- `getXxx` 只表示读取单个确定对象；多项结果用 `listXxx`，带筛选或模糊条件用 `findXxxBy...` 或 `searchXxxBy...`。布尔判断使用 `isXxx`、`hasXxx` 或 `canXxx`；转换使用 `toXxx`。
-- URL 路径由 Spring 注解定义，Java 方法重命名不改变 HTTP 契约；重命名公开方法时同步检查测试、方法引用、文档中的代码片段和 Spring 表达式。
-- 类名、DTO 名应是名词或名词短语；请求/响应模型分别以 `Request`、`Response` 结尾，异常以 `Exception` 结尾，配置绑定类以 `Properties` 结尾。不要用 `Util`、`Manager`、`Common` 掩盖职责。
-- 测试类以 `Test` 结尾；测试方法以“场景 + 预期”描述行为，可使用 `method_scenario_expectedResult` 形式，避免 `test1`、`success` 等无语义名称。
+- 不提交密钥、日志、`target/`、`node_modules/`、`dist/`、IDE 配置和本地 `.env`。
+- 不修改用户级环境配置，例如 `~/.m2/settings.xml`、全局 npm/pnpm 配置。
+- 不自动暂存或提交 `boot-server/data/bootapp.mv.db`；只有用户明确要求记录数据库快照时才处理。
+- 不使用 `git reset --hard`、`git checkout --`、交互式 rebase、强制推送。
+- 提交和推送必须由用户明确要求。
 
-### 常用命令
+## 5. Git 工作流
 
-从仓库根目录进入 `boot-server/` 后执行：
+1. 动手前执行 `git status --short`。
+2. 只暂存本任务相关文件。
+3. 提交前执行 `git diff --check` 和对应测试。
+4. 提交信息使用中文 Conventional Commits，例如 `feat: 新增统一异常处理`、`docs: 更新前端规范`。
+5. 推送前确认当前分支和待推送提交。
 
-```bash
-./mvnw -pl services/user-service -am test
-./mvnw -pl services/user-service -am install -DskipTests
-./mvnw -pl services/user-service spring-boot:run
-```
+## 6. 工作方式
 
-- Windows 使用 `mvnw.cmd`。
-- `spring-boot:run` 不带 `-am`，避免聚合父模块被当作启动目标。
-- 修改 `pom.xml`、编译参数或注解处理器配置后，用 `./mvnw clean install` 排除旧类缓存影响。
-- 后端代码变更至少运行受影响服务的 Maven 测试；新增错误处理、接口或安全行为时，优先补 Web 层测试覆盖 HTTP 状态和 `Result` JSON 契约。
-
-## 4. 接口与错误处理约定
-
-- 所有 API 响应使用 `Result<T>`，固定字段为 `code`、`message`、`data`。
-- MVC 接口前缀唯一由服务配置 `spring.mvc.servlet.path` 管理，当前为 `/api`；Controller 只声明资源路径，禁止在每个 `@RequestMapping` 中重复写 `/api`。修改前缀时补充真实 HTTP 集成测试，验证新前缀可访问且旧路径不可绕过。
-- `code = 0` 表示成功；失败使用 `ErrorCode` 的稳定业务码。除 `ErrorCode` 的集中定义外，业务代码、异常处理器和测试不得直接写业务码数字；通过枚举常量及其访问方法取得。
-- HTTP 状态码表达通信语义，业务码表达客户端处理分类：参数错误 `40000`、未认证 `40100`、无权限 `40300`、不存在 `40400`、冲突 `40900`、系统错误 `50000`。
-- 预期业务失败抛出 `BusinessException`，由 `GlobalExceptionHandler` 集中转换；未知异常必须记录完整日志，但不能把堆栈、SQL、类名或配置返回给客户端。
-- 新建写接口优先使用专用请求 DTO，禁止直接把持久化实体暴露为外部写入模型；字段映射先手写，DTO 数量足够多时再评估 MapStruct。
-
-### 认证与授权
-
-- 新增接口必须在安全配置中明确归类为公开、仅认证或权限保护；管理类接口默认最小授权，不能因为“已登录”就允许读取、修改或删除其他用户数据。
-- `401` 表示未携带或携带无效身份，`403` 表示身份有效但缺少权限；两者均由 Security Filter Chain 的 `AuthenticationEntryPoint`、`AccessDeniedHandler` 写入 `Result`。`@RestControllerAdvice` 无法捕获过滤器链提前终止的异常，不能作为安全异常的出口。
-- `GrantedAuthority` 使用稳定、面向机器的权限码（如 `user:manage`），不使用数据库主键、中文展示名或易变角色名称。权限码集中为命名常量，路由授权和测试均引用该常量或其契约，避免散落字符串。
-- JWT 仅保存主体身份与有效期；每个受保护请求从当前用户的角色、权限关系加载 authority，使角色授权调整无需等待旧令牌过期。不要把角色或权限列表写入 JWT 后当作唯一事实来源。
-- 每项授权规则至少覆盖三条真实 HTTP 路径：无身份为 `401/40100`、普通已登录用户为 `403/40300`、拥有目标权限的用户成功。权限不足响应不得泄露角色、权限或数据库关系细节。
-
-### OpenAPI 契约
-
-- Spring Boot 4 使用与其兼容的 SpringDoc 3.x；依赖版本集中在聚合父工程管理。引入 Swagger UI 后，`/v3/api-docs/**` 与 `/swagger-ui/**` 同样受 `spring.mvc.servlet.path` 影响，当前外部访问路径为 `/api/v3/api-docs` 与 `/api/swagger-ui/index.html`。
-- OpenAPI 元信息由单独的 Web 配置类维护，包括标题、版本、说明和 Bearer JWT 安全方案；不要把文档全局配置散落在 Controller。公开认证接口不声明安全要求，受保护的管理资源明确标注 Bearer 方案。
-- Controller 用 `@Tag` 表达资源分组，公开接口用 `@Operation` 简洁说明意图；描述必须与实际 HTTP 方法、路径、权限和 `Result<T>` 响应一致。字段敏感性、统一错误码和验证约束以真实 DTO、实体及异常处理为准，不在注释里制造第二套契约。
-- Swagger UI 与 OpenAPI JSON 是开发联调入口，安全配置必须显式允许其访问；生产环境是否暴露由部署配置决定，不将接口文档误当成权限控制界面。
-- 新增或调整文档配置时，至少用真实 HTTP 测试验证 OpenAPI JSON 可访问、包含目标路径，并验证 UI 页面可访问或重定向到实际入口；同时执行该服务全量测试作为回归门禁。
-
-## 5. 前端开发规范
-
-### 结构、命名与路由
-
-- `admin-client` 和 `user-client` 均使用 React 19、TypeScript、Vite、Tailwind CSS 4 与 shadcn/ui；先复用已有组件、主题和 `cn` 工具，新增 UI 组件优先通过 shadcn CLI 引入，不复制第三方源码。
-- 只要 shadcn/ui 已提供对应语义组件（例如 `Button`、`Input`、`Label`、`Card`、`Avatar`、`Badge`、`Skeleton`、`Sidebar`、`Dialog`），页面必须使用它；Tailwind 只负责页面编排和组件无法表达的局部布局，禁止手写同类基础控件替代组件。
-- 路由页面统一放入 `src/pages/<PageName>/index.tsx`，页面目录使用 PascalCase，例如 `pages/Login/index.tsx`、`pages/Users/index.tsx`；禁止再新增 `src/features/` 或把路由页面平铺为 `users-page.tsx`。
-- 页面私有组件放入当前页面的 `components/`，组件文件使用 PascalCase，例如 `pages/Users/components/UserTable.tsx`；页面私有请求、状态编排和事件流程需要抽离时，命名为 `useXxxService.ts`，例如 `pages/Users/useUsersService.ts`。
-- 自有 React 组件文件使用 PascalCase，例如 `layouts/AdminLayout.tsx`、`providers/AppProvider.tsx`；Hook 文件使用 `useXxx.ts`；普通工具、HTTP 客户端和会话模块使用 lowerCamelCase。`components/ui` 是 shadcn CLI 的生成落点，保留其小写文件命名，不手工改成 PascalCase。
-- 跨页面组件放 `src/components/`，HTTP、鉴权、错误转换、存储封装等基础能力放 `src/lib/`；接口输入输出类型以 `Request`、`Response` 结尾，路由守卫组件以 `Route` 结尾。
-- 需要多页面导航时使用 React Router；路由表集中维护，受保护页面必须显式包裹认证守卫。不要在按钮点击事件中散落 `window.location` 跳转，也不要在组件内猜测当前 URL。
-- B 端优先实现紧凑、可扫描的管理界面：清晰导航、表格与筛选、加载/空/错误/无权限状态齐全。图标按钮使用 Lucide 并提供可访问名称；不为后台工具添加营销式首屏或装饰卡片。
-- 前端完整工程规范见 [前端开发规范](docs/10-实战产品蓝图/前端开发规范.md)；该文档与本节冲突时，以本节的强制规则为准。
-
-### HTTP、认证与状态
-
-- 服务端基础地址只从 `VITE_API_BASE_URL` 读取；开发环境示例使用 `http://localhost:8080/api`，禁止在业务组件内硬编码主机、端口或 `/api` 前缀。
-- 统一 `request` 客户端负责 JSON、`Result<T>` 解包、网络错误和 HTTP 错误；页面与业务 Hook 只处理自己的成功数据和展示状态，不能各自解析 `code`、拼 Authorization Header。
-- JWT 只保存在 `sessionStorage`，并封装读写/清除函数；不要写入 URL、日志、错误提示或 React 状态快照。收到 `401/40100` 时清除凭据并跳转登录；收到 `403/40300` 时保留登录状态并展示无权限页。
-- 前端不能把本地角色判断当作授权依据：路由守卫只判断是否已登录，真正的资源权限始终由后端的 `401`、`403` 结果决定。所有异步页面至少呈现加载、空数据、请求失败和权限不足四种状态中的适当分支。
-
-### 验证与学习记录
-
-- 每张前端实践卡片先写明实际后端接口、成功/失败响应和页面验收动作；接口尚未达到 DoD 时不创建模拟业务数据或伪造调用。
-- 变更前端代码至少运行受影响工程的 `npm run typecheck`、`npm run lint`、`npm run build`；涉及路由、登录或权限时，再用浏览器验证跳转、刷新、401 与 403 行为。
-- 组件注释沿用“最小充分表达”：仅解释异步边界、权限处理、状态恢复等非显而易见决策。技术首次实质使用前，先在本文件补充分层、状态、安全、测试和运维约束，再编码。
-
-## 6. 学习型代码注释
-
-本项目既是可运行工程，也是学习材料。新增或修改代码应使用简体中文写出足够的教学性注释，但不把每一行语法翻译成注释。
-
-- 对公共类、接口、枚举和可复用方法写 Javadoc：说明职责、输入输出边界、所属层次，以及它解决的问题。
-- 对 Spring、MyBatis-Plus、Bean Validation、安全过滤器等框架机制，在首次出现处解释“框架何时调用它、为什么放在这里、和相邻层如何协作”。
-- 对条件分支、异常转换、事务、并发、序列化、权限判断等非直观逻辑，补充“为什么这样做”“不这样做的风险”“客户端会看到什么”的注释。
-- 对“代码表面没有赋值或调用，但状态却发生变化”的隐式行为，必须补全来源链路。典型例子包括数据库自增主键回填、ORM 自动填充、事务提交与回滚、AOP 代理、依赖注入、序列化绑定、缓存命中和框架默认配置；说明由谁触发、数据如何流转、结果写回到哪里，以及读者可如何验证。
-- 对关键数据约束写明不变量，例如哪些字段只能由服务端生成、错误码与 HTTP 状态各自的职责、Schema 为什么必须幂等。
-- 测试方法名称表达场景与预期；必要时加一行注释说明它防止的回归，而不是重复断言本身。
-- 注释必须随实现一起更新。过期、重复代码字面含义或没有决策价值的注释应删除；复杂逻辑优先拆成语义明确的方法，而不是依赖长篇注释掩盖结构问题。
-- 注释采用“最小充分表达”：关键机制、边界和风险一个都不能少，但默认一行说清；只有公共契约或隐式行为链路才展开为两到三句。首次完整解释后，后续同类代码只保留关键结论并避免重复；较长背景移入对应实践卡片或学习文档，不在多个类中复制。
-
-建议采用“目的 → 机制 → 风险/结果”的顺序。例如：先说明全局异常处理器将异常转为统一响应，再说明它为什么在 Web 层，最后指出未知异常不能泄露堆栈。对于隐式行为，额外写出“触发者 → 数据流转 → 可观察结果”。每张卡片完成后，读者应能从代码注释看出本次学习的技术点和设计取舍。
-
-## 7. 数据库与配置安全
-
-- H2 文件库路径依赖服务模块工作目录：`services/user-service` 下的 `../../data/bootapp` 指向 `boot-server/data/`。移动模块前必须同步审计该相对路径和所有文档链接。
-- `schema.sql` 必须保持可重复执行，不能覆盖已有学习数据。
-- `boot-server/data/*.lock.db` 与 `*.trace.db` 是运行时文件，禁止提交。
-- `boot-server/data/bootapp.mv.db` 是可追溯的学习快照，但当前运行产生的本地变更不得自动暂存或提交；只有用户明确要求记录数据库快照时才纳入提交。
-- 不提交 `target/`、`node_modules/`、IDE 配置、日志、密钥或本地 `.env` 文件。
-
-## 8. 文档与进度同步
-
-- 修改文档结构、文件名或目录后，使用 `rg` 审计交叉链接、命令和路径引用；完成后检查本地 Markdown 链接。
-- 文档用简体中文，术语首次出现要解释；保留既有阶段模板、前端对照、类比、Mermaid 图和自检题。
-- 实践卡片的“完成记录”应写明日期、提交（未提交时如实写“待提交”）和可复现的测试或接口证据。
-- 进度只记录已实际验证的结果；不要把计划、推测或未提交的未来工作写成完成。
-
-## 9. Git 工作流
-
-1. 动手前查看 `git status --short`，保留用户已有改动。
-2. 只暂存本任务相关文件；尤其确认 H2 数据文件没有被意外暂存。
-3. 提交前运行 `git diff --check` 和对应测试。
-4. 提交信息使用中文 Conventional Commits，例如 `feat: 新增统一异常处理`、`docs: 更新 M1 实践进度`。
-5. 禁止 `git reset --hard`、`git checkout --`、交互式 rebase 和强制推送。
-6. 提交与推送均应在用户明确要求后执行；推送前再次确认目标分支与待推送提交。
-
-## 10. 工作方式
-
-- 先读代码、卡片和相邻文档，再决定实现，不凭记忆猜测框架版本或工程约定。
-- 优先复用现有模式，避免为一次性需求引入抽象或依赖。
-- 变更保持可回滚、可测试、可解释；发现与当前卡片无关的问题时记录风险，但不要顺手扩展范围。
-- 汇报时说明完成的卡片、改动位置、验证结果和下一张已解锁卡片；不要把未经验证的本地运行状态说成已交付。
+- 先读代码、实践卡片和相邻文档，再修改。
+- 优先复用现有模式，避免一次性抽象。
+- 发现无关问题只记录风险，不扩大本次范围。
+- 汇报必须包含改动位置、验证结果和未完成风险。
