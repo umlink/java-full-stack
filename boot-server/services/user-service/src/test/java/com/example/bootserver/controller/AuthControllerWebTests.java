@@ -197,7 +197,7 @@ class AuthControllerWebTests {
         assertInvalidRegisterRequest(
                 """
                         {"username":"dave","email":"%s","password":"secret123"}
-                        """.formatted("a".repeat(117) + "@example.com"),
+                        """.formatted("a".repeat(64) + "@" + "b".repeat(63) + ".com"),
                 "邮箱不能超过 128 个字符");
     }
 
