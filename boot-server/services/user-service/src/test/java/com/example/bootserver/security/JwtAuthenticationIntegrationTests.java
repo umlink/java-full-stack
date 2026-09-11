@@ -5,12 +5,18 @@ import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.example.bootserver.common.error.ErrorCode;
+import com.example.bootserver.common.result.Result;
+import com.example.bootserver.config.ServletPathProperties;
 import com.example.bootserver.entity.Role;
+import com.example.bootserver.entity.User;
 import com.example.bootserver.entity.UserRole;
 import com.example.bootserver.mapper.RoleMapper;
+import com.example.bootserver.mapper.UserMapper;
 import com.example.bootserver.mapper.UserRoleMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import tools.jackson.databind.ObjectMapper;
@@ -47,10 +53,16 @@ class JwtAuthenticationIntegrationTests {
     private ObjectMapper objectMapper;
 
     @Autowired
+    private ServletPathProperties servletPathProperties;
+
+    @Autowired
     private RoleMapper roleMapper;
 
     @Autowired
     private UserRoleMapper userRoleMapper;
+
+    @Autowired
+    private UserMapper userMapper;
 
     @Test
     void protectedEndpointRejectsMissingAndTamperedTokensWithUnifiedUnauthorizedResponse() throws Exception {
@@ -75,39 +87,61 @@ class JwtAuthenticationIntegrationTests {
         LoginResult validLogin = registerAndLogin("valid-token-user", "valid-token-user@example.com");
         HttpResponse<String> authenticatedResponse = getCurrentUser(validLogin.accessToken());
 
-        assertThat(authenticatedResponse.statusCode()).isEqualTo(200);
-        assertThat(authenticatedResponse.body()).contains("\"code\":0", "\"data\":" + validLogin.userId());
+        assertThat(authenticatedResponse.statusCode()).isEqualTo(HttpStatus.OK.value());
+        assertThat(authenticatedResponse.body()).contains("\"code\":" + Result.SUCCESS_CODE, "\"data\":" + validLogin.userId());
     }
 
     @Test
     void managementEndpointDistinguishesMissingUserAndAdminAuthorities() throws Exception {
         // 同一路由验证三种安全语义：没有身份、身份不足、具备后台权限。
-        assertUnauthorized(get("/api/users", null));
+        assertUnauthorized(get(externalPath("/users"), null));
 
         LoginResult ordinaryUser = registerAndLogin("ordinary-authority-user", "ordinary-authority-user@example.com");
-        HttpResponse<String> forbidden = get("/api/users", ordinaryUser.accessToken());
+        HttpResponse<String> forbidden = get(externalPath("/users"), ordinaryUser.accessToken());
         assertThat(forbidden.statusCode()).isEqualTo(ErrorCode.FORBIDDEN.getHttpStatus());
         assertThat(forbidden.body()).contains("\"code\":" + ErrorCode.FORBIDDEN.getCode(), "\"message\":\"没有访问权限\"");
 
         LoginResult administrator = registerAndLogin("admin-authority-user", "admin-authority-user@example.com");
         grantAdministratorRole(administrator.userId());
-        HttpResponse<String> allowed = get("/api/users", administrator.accessToken());
+        HttpResponse<String> allowed = get(externalPath("/users"), administrator.accessToken());
 
-        assertThat(allowed.statusCode()).isEqualTo(200);
-        assertThat(allowed.body()).contains("\"code\":0");
+        assertThat(allowed.statusCode()).isEqualTo(HttpStatus.OK.value());
+        assertThat(allowed.body()).contains("\"code\":" + Result.SUCCESS_CODE);
+    }
+
+    @Test
+    void oldTokenIsRejectedAfterItsUserIsDisabled() throws Exception {
+        LoginResult user = registerAndLogin("disabled-token-user", "disabled-token-user@example.com");
+        User disabled = new User();
+        disabled.setId(user.userId());
+        disabled.setStatus(User.STATUS_DISABLED);
+        assertThat(userMapper.updateById(disabled)).isEqualTo(1);
+
+        // 已签发的 JWT 不再足以证明有效身份，个人接口与管理接口都必须在过滤器处返回 401。
+        assertUnauthorized(getCurrentUser(user.accessToken()));
+        assertUnauthorized(get(externalPath("/users"), user.accessToken()));
+    }
+
+    @Test
+    void oldTokenIsRejectedAfterItsUserIsLogicallyDeleted() throws Exception {
+        LoginResult user = registerAndLogin("deleted-token-user", "deleted-token-user@example.com");
+        assertThat(userMapper.deleteById(user.userId())).isEqualTo(1);
+
+        assertUnauthorized(getCurrentUser(user.accessToken()));
+        assertUnauthorized(get(externalPath("/users"), user.accessToken()));
     }
 
     private LoginResult registerAndLogin(String username, String email) throws Exception {
-        HttpResponse<String> registration = postJson("/api/auth/register", """
+        HttpResponse<String> registration = postJson(externalPath("/auth/register"), """
                 {"username":"%s","email":"%s","password":"secret123"}
                 """.formatted(username, email));
-        assertThat(registration.statusCode()).isEqualTo(200);
+        assertThat(registration.statusCode()).isEqualTo(HttpStatus.OK.value());
         long userId = objectMapper.readTree(registration.body()).path("data").asLong();
 
-        HttpResponse<String> login = postJson("/api/auth/login", """
+        HttpResponse<String> login = postJson(externalPath("/auth/login"), """
                 {"username":"%s","password":"secret123"}
                 """.formatted(username));
-        assertThat(login.statusCode()).isEqualTo(200);
+        assertThat(login.statusCode()).isEqualTo(HttpStatus.OK.value());
         // 使用应用同一套 Jackson 解析响应，避免用字符串截取把 JSON 结构当作普通文本处理。
         String accessToken = objectMapper.readTree(login.body()).path("data").path("accessToken").asString();
         return new LoginResult(userId, accessToken);
@@ -128,20 +162,20 @@ class JwtAuthenticationIntegrationTests {
     }
 
     private HttpResponse<String> getCurrentUser(String accessToken) throws Exception {
-        return get("/api/users/me", accessToken);
+        return get(externalPath("/users/me"), accessToken);
     }
 
     private HttpResponse<String> get(String path, String accessToken) throws Exception {
         HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
                 .GET();
         if (accessToken != null) {
-            request.header("Authorization", "Bearer " + accessToken);
+            request.header(HttpHeaders.AUTHORIZATION, BearerAuthentication.SCHEME_PREFIX + accessToken);
         }
         return HttpClient.newHttpClient().send(request.build(), HttpResponse.BodyHandlers.ofString());
     }
 
     private void grantAdministratorRole(long userId) {
-        Role administratorRole = roleMapper.selectOne(new LambdaQueryWrapper<Role>().eq(Role::getCode, "ADMIN"));
+        Role administratorRole = roleMapper.selectOne(new LambdaQueryWrapper<Role>().eq(Role::getCode, RoleCodes.ADMIN));
         UserRole binding = new UserRole();
         binding.setUserId(userId);
         binding.setRoleId(administratorRole.getId());
@@ -150,15 +184,19 @@ class JwtAuthenticationIntegrationTests {
 
     private HttpResponse<String> postJson(String path, String body) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
-                .header("Content-Type", "application/json")
+                .header(HttpHeaders.CONTENT_TYPE, "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
         return HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
     }
 
     private void assertUnauthorized(HttpResponse<String> response) {
-        assertThat(response.statusCode()).isEqualTo(401);
-        assertThat(response.body()).contains("\"code\":40100", "\"message\":\"请先登录\"");
+        assertThat(response.statusCode()).isEqualTo(HttpStatus.UNAUTHORIZED.value());
+        assertThat(response.body()).contains("\"code\":" + ErrorCode.UNAUTHORIZED.getCode(), "\"message\":\"请先登录\"");
+    }
+
+    private String externalPath(String resourcePath) {
+        return servletPathProperties.toExternalPath(resourcePath);
     }
 
     private record LoginResult(long userId, String accessToken) {

@@ -9,6 +9,7 @@ import com.example.bootserver.controller.dto.LoginRequest;
 import com.example.bootserver.controller.dto.RegisterRequest;
 import com.example.bootserver.controller.dto.UpdateUserRequest;
 import com.example.bootserver.entity.Role;
+import com.example.bootserver.security.RoleCodes;
 import com.example.bootserver.entity.User;
 import com.example.bootserver.entity.UserRole;
 import com.example.bootserver.exception.UserNotFoundException;
@@ -130,10 +131,10 @@ public class UserService extends ServiceImpl<UserMapper, User> {
     private void bindDefaultUserRole(Long userId) {
         // 用角色码定位主键，避免依赖每次启动可能变化的自增 ID
         Role role = roleMapper.selectOne(new LambdaQueryWrapper<Role>()
-                .eq(Role::getCode, "USER"));
+                .eq(Role::getCode, RoleCodes.USER));
         if (role == null) {
             // 不属于客户端可见的业务失败：初始数据缺失属于服务端配置错误，交全局处理器按 500 兜底
-            throw new IllegalStateException("USER 角色不存在，请检查 schema.sql 初始数据");
+            throw new IllegalStateException(RoleCodes.USER + " 角色不存在，请检查 schema.sql 初始数据");
         }
 
         // 关联表没有唯一约束外的其它逻辑，直接写两列即可；user_id 取自刚回填的自增主键
@@ -155,7 +156,8 @@ public class UserService extends ServiceImpl<UserMapper, User> {
      */
     @Transactional
     public boolean ensureLocalAdmin(String username, String password) {
-        User user = lambdaQuery().eq(User::getUsername, username).one();
+        // 不能用 MyBatis-Plus 默认查询：它会隐藏 deleted=1 的同名记录，随后 INSERT 会落到难懂的唯一键异常。
+        User user = baseMapper.selectByUsernameIncludingDeleted(username);
         boolean created = false;
         if (user == null) {
             user = new User();
@@ -167,6 +169,9 @@ public class UserService extends ServiceImpl<UserMapper, User> {
             user.setStatus(User.STATUS_ACTIVE);
             save(user);
             created = true;
+        } else if (!isActiveAccount(user)) {
+            throw new IllegalStateException("本地管理员账号 %s 已%s，请更换 app.local-admin.username 或先修复该账号状态"
+                    .formatted(username, describeUnavailableAccount(user)));
         }
         bindAdminRoleIfAbsent(user.getId());
         return created;
@@ -175,9 +180,9 @@ public class UserService extends ServiceImpl<UserMapper, User> {
     /** 绑定 ADMIN 角色；已绑定时不再重复插入，保证引导在多次启动间幂等。 */
     private void bindAdminRoleIfAbsent(Long userId) {
         Role adminRole = roleMapper.selectOne(new LambdaQueryWrapper<Role>()
-                .eq(Role::getCode, "ADMIN"));
+                .eq(Role::getCode, RoleCodes.ADMIN));
         if (adminRole == null) {
-            throw new IllegalStateException("ADMIN 角色不存在，请检查 schema.sql 初始数据");
+            throw new IllegalStateException(RoleCodes.ADMIN + " 角色不存在，请检查 schema.sql 初始数据");
         }
 
         long bound = userRoleMapper.countByUserIdAndRoleId(userId, adminRole.getId());
@@ -244,5 +249,20 @@ public class UserService extends ServiceImpl<UserMapper, User> {
     public boolean deleteUserById(Long id) {
         getRequiredById(id);
         return removeById(id);
+    }
+
+    private boolean isActiveAccount(User user) {
+        return Integer.valueOf(User.STATUS_ACTIVE).equals(user.getStatus())
+                && Integer.valueOf(User.NOT_DELETED).equals(user.getDeleted());
+    }
+
+    private String describeUnavailableAccount(User user) {
+        if (!Integer.valueOf(User.NOT_DELETED).equals(user.getDeleted())) {
+            return "逻辑删除";
+        }
+        if (!Integer.valueOf(User.STATUS_ACTIVE).equals(user.getStatus())) {
+            return "停用";
+        }
+        return "异常";
     }
 }

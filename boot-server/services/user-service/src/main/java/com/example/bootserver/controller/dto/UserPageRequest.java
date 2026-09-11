@@ -32,4 +32,5 @@ public class UserPageRequest {
     public void setSize(long size) {
         this.size = size;
     }
+
 }

@@ -9,7 +9,7 @@ const rawBaseUrl = import.meta.env.VITE_API_BASE_URL
 // 缺配置时立即失败：与其发出错误地址的请求再排查，不如启动时就指出怎么修
 if (!rawBaseUrl) {
   throw new Error(
-    "缺少环境变量 VITE_API_BASE_URL：请在 admin-client 目录复制 .env.example 为 .env 并按需修改",
+    "缺少环境变量 VITE_API_BASE_URL：请在 admin-client 目录复制 .env.example 为 .env 并按需修改"
   )
 }
 

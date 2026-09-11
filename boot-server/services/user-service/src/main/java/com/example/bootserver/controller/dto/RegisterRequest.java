@@ -3,6 +3,7 @@ package com.example.bootserver.controller.dto;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 /**
  * 注册接口允许客户端提交的字段白名单。
@@ -15,10 +16,11 @@ import jakarta.validation.constraints.NotBlank;
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record RegisterRequest(
-        // 注册登录名：将来与密码一起决定“是谁”，因此必须非空；长度上限由数据库列定义兜底
-        @NotBlank(message = "用户名不能为空") String username,
+        // 与 t_user.username VARCHAR(64) 对齐，先在 Web 层拒绝超长值，避免数据库异常伪装成 500。
+        @NotBlank(message = "用户名不能为空") @Size(max = 64, message = "用户名不能超过 64 个字符") String username,
         // 邮箱既用于登录找回等场景，也是账号唯一业务键之一，重复将触发 409 冲突
-        @NotBlank(message = "邮箱不能为空") @Email(message = "邮箱格式不正确") String email,
+        @NotBlank(message = "邮箱不能为空") @Email(message = "邮箱格式不正确")
+        @Size(max = 128, message = "邮箱不能超过 128 个字符") String email,
         // 仅约束“非空”，具体强度策略不在当前卡片范围
         @NotBlank(message = "密码不能为空") String password
 ) {

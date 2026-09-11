@@ -15,6 +15,10 @@ import java.util.Objects;
  */
 public class Result<T> {
 
+    /** 成功响应的固定协议码；失败码由 {@link ErrorCode} 集中定义。 */
+    public static final int SUCCESS_CODE = 0;
+    public static final String SUCCESS_MESSAGE = "success";
+
     /** 业务状态码：0 = 成功，非 0 = 业务失败 */
     private final int code;
 
@@ -29,11 +33,11 @@ public class Result<T> {
     }
 
     public static <T> Result<T> ok() {
-        return new Result<>(0, "success", null);
+        return new Result<>(SUCCESS_CODE, SUCCESS_MESSAGE, null);
     }
 
     public static <T> Result<T> ok(T data) {
-        return new Result<>(0, "success", data);
+        return new Result<>(SUCCESS_CODE, SUCCESS_MESSAGE, data);
     }
 
     /**

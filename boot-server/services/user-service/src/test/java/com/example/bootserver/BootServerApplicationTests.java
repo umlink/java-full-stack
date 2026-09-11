@@ -2,6 +2,8 @@ package com.example.bootserver;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.example.bootserver.entity.User;
+import com.example.bootserver.security.PermissionCodes;
+import com.example.bootserver.security.RoleCodes;
 import com.example.bootserver.mapper.UserMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -55,15 +57,16 @@ class BootServerApplicationTests {
         // 角色码和权限码是后续授权判断的稳定业务标识，不能依赖每次启动可能不同的自增 ID。
         List<String> roleCodes = jdbcTemplate.queryForList(
                 "SELECT code FROM t_role ORDER BY code", String.class);
+        // SQL 只格式化编译期业务常量，绝不接收外部输入，避免把协议码重复为第二份字面量定义。
         Integer adminManagePermissionCount = jdbcTemplate.queryForObject("""
                 SELECT COUNT(*)
                 FROM t_role role
                 JOIN t_role_permission relation ON relation.role_id = role.id
                 JOIN t_permission permission ON permission.id = relation.permission_id
-                WHERE role.code = 'ADMIN' AND permission.code = 'user:manage'
-                """, Integer.class);
+                WHERE role.code = '%s' AND permission.code = '%s'
+                """.formatted(RoleCodes.ADMIN, PermissionCodes.USER_MANAGEMENT), Integer.class);
 
-        assertThat(roleCodes).containsExactly("ADMIN", "USER");
+        assertThat(roleCodes).containsExactly(RoleCodes.ADMIN, RoleCodes.USER);
         assertThat(adminManagePermissionCount).isEqualTo(1);
     }
 

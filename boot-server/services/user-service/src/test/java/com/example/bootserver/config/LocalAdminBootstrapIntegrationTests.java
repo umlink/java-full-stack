@@ -2,13 +2,18 @@ package com.example.bootserver.config;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.example.bootserver.entity.Role;
+import com.example.bootserver.security.RoleCodes;
 import com.example.bootserver.entity.User;
+import com.example.bootserver.common.result.Result;
 import com.example.bootserver.mapper.RoleMapper;
 import com.example.bootserver.mapper.UserMapper;
 import com.example.bootserver.mapper.UserRoleMapper;
 import com.example.bootserver.service.UserService;
+import com.example.bootserver.security.BearerAuthentication;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import tools.jackson.databind.ObjectMapper;
@@ -19,6 +24,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * 本地管理员引导集成测试（M1-C-05）：
@@ -42,6 +48,9 @@ class LocalAdminBootstrapIntegrationTests {
     private ObjectMapper objectMapper;
 
     @Autowired
+    private ServletPathProperties servletPathProperties;
+
+    @Autowired
     private UserService userService;
 
     @Autowired
@@ -55,12 +64,12 @@ class LocalAdminBootstrapIntegrationTests {
 
     @Test
     void bootstrapCreatesConfiguredAdministratorWithUserManagePermission() throws Exception {
-        // 启动即引导：账号可直接登录，并且 ADMIN 角色关联的 user:manage 让 /api/users 放行
+        // 启动即引导：账号可直接登录，并且 ADMIN 角色关联的 user:manage 让用户管理资源放行。
         String accessToken = loginAsBootAdmin();
 
-        HttpResponse<String> users = get("/api/users", accessToken);
-        assertThat(users.statusCode()).isEqualTo(200);
-        assertThat(users.body()).contains("\"code\":0");
+        HttpResponse<String> users = get(externalPath("/users"), accessToken);
+        assertThat(users.statusCode()).isEqualTo(HttpStatus.OK.value());
+        assertThat(users.body()).contains("\"code\":" + Result.SUCCESS_CODE);
     }
 
     @Test
@@ -72,8 +81,8 @@ class LocalAdminBootstrapIntegrationTests {
         assertThat(countUsersByUsername("boot-admin")).isEqualTo(1);
         assertThat(countAdminRoleBindings("boot-admin")).isEqualTo(1);
 
-        HttpResponse<String> users = get("/api/users", loginAsBootAdmin());
-        assertThat(users.statusCode()).isEqualTo(200);
+        HttpResponse<String> users = get(externalPath("/users"), loginAsBootAdmin());
+        assertThat(users.statusCode()).isEqualTo(HttpStatus.OK.value());
     }
 
     @Test
@@ -88,10 +97,37 @@ class LocalAdminBootstrapIntegrationTests {
         assertThat(userService.count()).isEqualTo(usersBefore);
     }
 
+    @Test
+    void bootstrapFailsClearlyWhenConfiguredUsernameIsDisabled() {
+        Long userId = userService.register(new com.example.bootserver.controller.dto.RegisterRequest(
+                "disabled-bootstrap-admin", "disabled-bootstrap-admin@example.com", "secret123"));
+        User disabled = new User();
+        disabled.setId(userId);
+        disabled.setStatus(User.STATUS_DISABLED);
+        assertThat(userMapper.updateById(disabled)).isEqualTo(1);
+
+        assertThatThrownBy(() -> userService.ensureLocalAdmin("disabled-bootstrap-admin", "secret123"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("已停用")
+                .hasMessageContaining("app.local-admin.username");
+    }
+
+    @Test
+    void bootstrapFailsClearlyWhenConfiguredUsernameIsLogicallyDeleted() {
+        Long userId = userService.register(new com.example.bootserver.controller.dto.RegisterRequest(
+                "deleted-bootstrap-admin", "deleted-bootstrap-admin@example.com", "secret123"));
+        assertThat(userMapper.deleteById(userId)).isEqualTo(1);
+
+        assertThatThrownBy(() -> userService.ensureLocalAdmin("deleted-bootstrap-admin", "secret123"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("已逻辑删除")
+                .hasMessageContaining("app.local-admin.username");
+    }
+
     private String loginAsBootAdmin() throws Exception {
-        HttpResponse<String> login = postJson("/api/auth/login",
+        HttpResponse<String> login = postJson(externalPath("/auth/login"),
                 "{\"username\":\"boot-admin\",\"password\":\"secret123\"}");
-        assertThat(login.statusCode()).isEqualTo(200);
+        assertThat(login.statusCode()).isEqualTo(HttpStatus.OK.value());
         return objectMapper.readTree(login.body()).path("data").path("accessToken").asString();
     }
 
@@ -101,13 +137,13 @@ class LocalAdminBootstrapIntegrationTests {
 
     private long countAdminRoleBindings(String username) {
         User user = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getUsername, username));
-        Role adminRole = roleMapper.selectOne(new LambdaQueryWrapper<Role>().eq(Role::getCode, "ADMIN"));
+        Role adminRole = roleMapper.selectOne(new LambdaQueryWrapper<Role>().eq(Role::getCode, RoleCodes.ADMIN));
         return userRoleMapper.countByUserIdAndRoleId(user.getId(), adminRole.getId());
     }
 
     private HttpResponse<String> get(String path, String accessToken) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
-                .header("Authorization", "Bearer " + accessToken)
+                .header(HttpHeaders.AUTHORIZATION, BearerAuthentication.SCHEME_PREFIX + accessToken)
                 .GET()
                 .build();
         return HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
@@ -115,9 +151,13 @@ class LocalAdminBootstrapIntegrationTests {
 
     private HttpResponse<String> postJson(String path, String body) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
-                .header("Content-Type", "application/json")
+                .header(HttpHeaders.CONTENT_TYPE, "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
         return HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private String externalPath(String resourcePath) {
+        return servletPathProperties.toExternalPath(resourcePath);
     }
 }

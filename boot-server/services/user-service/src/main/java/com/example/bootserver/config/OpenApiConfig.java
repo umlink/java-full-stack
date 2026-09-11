@@ -11,7 +11,7 @@ import org.springframework.context.annotation.Configuration;
 /**
  * M1 接口文档的全局元信息与 JWT 安全方案。
  *
- * SpringDoc 在启动时读取本配置、Controller 映射和 DTO 约束，生成 /api/v3/api-docs；Swagger UI
+ * SpringDoc 在启动时读取本配置、Controller 映射和 DTO 约束，生成由 MVC 外部前缀配置决定的 OpenAPI JSON；Swagger UI
  * 只是该 JSON 的可视化页面，实际鉴权仍由 Spring Security 的过滤器链执行。
  */
 @Configuration

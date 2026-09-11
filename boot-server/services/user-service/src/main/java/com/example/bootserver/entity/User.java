@@ -22,6 +22,12 @@ public class User {
     /** 账号状态：正常。注册时显式赋值，避免依赖“insert 后实体字段仍为 null”的隐式默认值。 */
     public static final int STATUS_ACTIVE = 1;
 
+    /** 账号状态：停用。停用账号不能登录，已有 JWT 也会在过滤器校验时失效。 */
+    public static final int STATUS_DISABLED = 0;
+
+    /** 逻辑删除状态：记录仍可追溯，但不应作为可用账号。 */
+    public static final int NOT_DELETED = 0;
+
     /** 主键：数据库自增 */
     @TableId(type = IdType.AUTO)
     private Long id;

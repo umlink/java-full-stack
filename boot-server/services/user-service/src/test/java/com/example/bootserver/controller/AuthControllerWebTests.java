@@ -2,10 +2,12 @@ package com.example.bootserver.controller;
 
 import com.example.bootserver.common.error.ErrorCode;
 import com.example.bootserver.common.error.BusinessException;
+import com.example.bootserver.common.result.Result;
 import com.example.bootserver.controller.dto.LoginRequest;
 import com.example.bootserver.controller.dto.LoginResponse;
 import com.example.bootserver.controller.dto.RegisterRequest;
 import com.example.bootserver.entity.User;
+import com.example.bootserver.security.RoleCodes;
 import com.example.bootserver.handler.GlobalExceptionHandler;
 import com.example.bootserver.security.JwtTokenService;
 import com.example.bootserver.service.UserService;
@@ -60,7 +62,7 @@ class AuthControllerWebTests {
                                 {"username":"dave","email":"dave@example.com","password":"secret123"}
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.code").value(Result.SUCCESS_CODE))
                 .andExpect(jsonPath("$.data").value(200));
 
         verify(userService).register(any(RegisterRequest.class));
@@ -79,8 +81,8 @@ class AuthControllerWebTests {
         mockMvc.perform(post("/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"username":"dave","email":"dave@example.com","password":"secret123","role":"ADMIN","roles":[{"id":1},{"id":2}]}
-                                """))
+                                {"username":"dave","email":"dave@example.com","password":"secret123","role":"%s","roles":[{"id":1},{"id":2}]}
+                                """.formatted(RoleCodes.ADMIN)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data").value(201));
     }
@@ -119,7 +121,7 @@ class AuthControllerWebTests {
                                 {"username":"dave","password":"secret123"}
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.code").value(Result.SUCCESS_CODE))
                 .andExpect(jsonPath("$.data.accessToken").value("signed.jwt.token"))
                 .andExpect(jsonPath("$.data.expiresAt").value("2026-09-09T12:30:00Z"));
 
@@ -179,6 +181,24 @@ class AuthControllerWebTests {
                         {"username":"dave","email":"dave@example.com","password":" "}
                         """,
                 "密码不能为空");
+    }
+
+    @Test
+    void registerRejectsUsernameLongerThanDatabaseColumnBeforeCallingService() throws Exception {
+        assertInvalidRegisterRequest(
+                """
+                        {"username":"%s","email":"dave@example.com","password":"secret123"}
+                        """.formatted("u".repeat(65)),
+                "用户名不能超过 64 个字符");
+    }
+
+    @Test
+    void registerRejectsEmailLongerThanDatabaseColumnBeforeCallingService() throws Exception {
+        assertInvalidRegisterRequest(
+                """
+                        {"username":"dave","email":"%s","password":"secret123"}
+                        """.formatted("a".repeat(117) + "@example.com"),
+                "邮箱不能超过 128 个字符");
     }
 
     private void assertInvalidRegisterRequest(String requestBody, String expectedMessage) throws Exception {

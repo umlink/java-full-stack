@@ -71,6 +71,23 @@ boot-server/
 - MVC 前缀只由 `spring.mvc.servlet.path` 管理；Controller 禁止重复写 `/api`。
 - 写接口必须使用请求 DTO，禁止直接暴露实体作为外部写入模型。
 
+### 静态值与路径治理
+
+- `spring.mvc.servlet.path`、端口、数据库地址、JWT TTL、密钥、管理员环境键等可部署配置只能从配置绑定对象或 Spring 配置源读取；生产代码和覆盖该配置的真实 HTTP 测试不得复制默认值。测试验证前缀可变性时，必须覆盖一个非默认测试配置，并通过绑定后的属性组装外部 URL。
+- Controller 的 `@RequestMapping`、`@GetMapping`、`@PostMapping`、`@PutMapping`、`@DeleteMapping` 是接口定义，允许并要求就近保留清晰的内部资源路径字面量，例如 `/auth`、`/register`、`/users/{id}`；禁止仅为常量治理把它们替换为路径常量。Security 配置中的 DispatcherServlet 内部匹配路径同理，保持 `/auth/**`、`/users/**` 的局部可读性，禁止拼接 MVC 外部前缀。
+- 稳定的跨层机器协议、成功码、错误码、权限码、角色码、数据库状态和共享存储键必须按职责集中。优先使用已有领域类型或窄作用域命名常量，例如 `ErrorCode`、`Result.SUCCESS_CODE`、`User.STATUS_ACTIVE`；全局策略或阈值仅在确有多个消费者且需独立演进时集中。禁止无语义的 `Constants`、`CommonUtil` 或跨领域大杂烩。
+- 能变化的配置值和稳定不变的契约值不可混用：配置绑定类只保存配置，领域类型只保存领域不变量，路由注解只声明接口，测试辅助方法只负责根据绑定配置生成外部地址。
+- DTO 的 Bean Validation 注解及其局部边界数值、正则和提示语必须就近保留；即使多个 DTO 使用相同规则，也不为此创建校验常量类。Controller 与 Security 路径、单测 fixture/request/assertion、SQL 表名/列名及 `schema.sql` 种子业务码均可保留字面量；它们不得成为生产契约的第二份定义。字符串重复不是抽常量条件，只有跨模块共享、可配置或承载机器协议，且集中后能明确所有权与演进一致性的值才集中。
+
+静态审计至少覆盖以下类别：
+
+```bash
+rg -n --glob '*.java' --glob '*.yml' --glob '*.yaml' --glob '*.properties' "/api|servlet.path|timeout|ttl|TOKEN|SECRET|BOOT_|Authorization|Bearer |40000|40100|40300|40400|40900|50000|user:manage|ADMIN|USER|status|deleted|page|size" boot-server
+rg -n --glob '*.java' 'static final|@RequestMapping|@GetMapping|@PostMapping|@PutMapping|@DeleteMapping' boot-server
+```
+
+审计报告必须说明：运行时配置从哪一份配置源读取；稳定常量由哪个职责类型拥有；哪些字面量因映射注解、Security 内部路径、DDL/种子数据、协议固定字段或单测试数据而保留；以及配置前缀变化是否有测试证据。
+
 错误码约定：
 
 ```text
@@ -196,6 +213,14 @@ XML 规范：
 - `boot-server/data/*.lock.db`、`*.trace.db` 禁止提交。
 - `boot-server/data/bootapp.mv.db` 未经用户明确要求不得暂存。
 - 密钥、密码、token 只从环境变量或安全配置注入，不写入代码和文档示例真实值。
+
+### M2 交易数据建模
+
+- 金额字段必须使用 `DECIMAL(precision, scale)` 与 Java `BigDecimal`，明确精度和小数位；禁止 `float`、`double`。
+- 新表字段必须显式定义 `NOT NULL`、默认值和状态可取值；状态常量在实体或领域类型集中维护，不散落魔法数字。
+- 业务编码（例如 SKU 编码）必须由数据库唯一约束兜底；逻辑删除表要在建模时明确唯一键是否复用，并用索引结构实现该策略。
+- 关联字段必须声明引用关系或在不使用物理外键时记录替代一致性机制；删除策略、乐观锁字段和必要索引在 DDL 与测试中同时体现。
+- Schema 变更保持幂等，种子数据按稳定业务键防重，不覆盖已有学习数据。
 
 ## 11. OpenAPI
 

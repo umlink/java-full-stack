@@ -1,5 +1,6 @@
 import { apiBaseUrl } from "@/lib/env"
 import { clearToken, getToken } from "@/lib/authSession"
+import { API_RESULT_CODE } from "@/lib/apiContract"
 
 /**
  * 后端统一响应体，对齐 boot-server `common-core` 的 `Result<T>` 契约。
@@ -42,12 +43,6 @@ export class ApiError extends Error {
   }
 }
 
-/** 后端 ErrorCode 的未认证业务码：携带会话的请求收到它代表令牌已失效 */
-export const API_CODE_UNAUTHORIZED = 40100
-
-/** 后端 ErrorCode 的无权限业务码：会话仍有效，只是当前账号无权访问目标资源 */
-export const API_CODE_FORBIDDEN = 40300
-
 /**
  * 统一 HTTP 入口：把「网络失败 / 非受控 HTTP 失败 / 业务码失败」都折叠成 `ApiError`，
  * 成功时直接返回已解包的 `Result.data`，调用方拿到的就是业务数据本身。
@@ -73,7 +68,12 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     response = await fetch(`${apiBaseUrl}${path}`, { ...init, headers })
   } catch {
     // fetch 只在网络层失败时抛异常；HTTP 4xx/5xx 走正常返回，不会进入这里
-    throw new ApiError("network", 0, 0, "无法连接服务器，请稍后重试")
+    throw new ApiError(
+      "network",
+      API_RESULT_CODE.SUCCESS,
+      0,
+      "无法连接服务器，请稍后重试",
+    )
   }
 
   // 成功与失败响应都尝试按 Result 解析：后端统一异常处理保证失败响应也带业务码
@@ -86,26 +86,33 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   // 成功必须同时满足 HTTP 通信成功和业务契约成功。即使中间层意外返回了
   // `code = 0`，非 2xx 也不能让调用方把无效响应当作业务数据继续处理。
-  if (result && response.ok && result.code === 0) {
+  if (result && response.ok && result.code === API_RESULT_CODE.SUCCESS) {
     return result.data
   }
 
-  if (result && result.code !== 0) {
+  if (result && result.code !== API_RESULT_CODE.SUCCESS) {
     // 携带会话的请求被判定未认证 = 令牌已失效（过期/被替换）：清理本地会话回登录页重新建立。
     // 不带令牌的公开接口（如登录）不会走到这里，其 40100 由页面按普通业务失败展示，
     // 避免登录页输入错误密码时被整页跳转冲掉错误提示。
-    if (accessToken && result.code === API_CODE_UNAUTHORIZED) {
+    if (accessToken && result.code === API_RESULT_CODE.UNAUTHORIZED) {
       clearToken()
       window.location.assign("/login")
     }
     // 403/40300（无权限）保持会话不动：这是账号权限问题而非登录状态问题，
     // 由页面识别 ApiError.code 后转入无权限状态
-    throw new ApiError("business", result.code, response.status, result.message || "请求失败")
+    throw new ApiError(
+      "business",
+      result.code,
+      response.status,
+      result.message || "请求失败",
+    )
   }
 
   // 拿不到 Result 体：非 2xx 多为中间层故障（如代理层 502 = 后端不可达），2xx 则是后端契约被破坏
   // 5xx 统一为对用户友好的文案，4xx 等其余状态保留码值便于排障
   const fallbackMessage =
-    response.status >= 500 ? "服务暂时不可用，请稍后重试" : `请求失败（HTTP ${response.status}）`
-  throw new ApiError("http", 0, response.status, fallbackMessage)
+    response.status >= 500
+      ? "服务暂时不可用，请稍后重试"
+      : `请求失败（HTTP ${response.status}）`
+  throw new ApiError("http", API_RESULT_CODE.SUCCESS, response.status, fallbackMessage)
 }

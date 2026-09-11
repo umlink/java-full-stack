@@ -5,6 +5,7 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 /**
  * 创建用户接口允许客户端提交的字段白名单。
@@ -23,9 +24,10 @@ import jakarta.validation.constraints.NotBlank;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record CreateUserRequest(
         // 名称是数据库 NOT NULL 字段；空白字符串虽然能反序列化，却没有业务含义，因此必须拒绝。
-        @NotBlank(message = "姓名不能为空") String name,
+        @NotBlank(message = "姓名不能为空") @Size(max = 64, message = "姓名不能超过 64 个字符") String name,
         // 先要求非空再校验邮箱格式，使调用方能分别得到“未填写”和“格式错误”的明确反馈。
-        @NotBlank(message = "邮箱不能为空") @Email(message = "邮箱格式不正确") String email,
+        @NotBlank(message = "邮箱不能为空") @Email(message = "邮箱格式不正确")
+        @Size(max = 128, message = "邮箱不能超过 128 个字符") String email,
         // 年龄可不填；一旦提供则限制在合理范围内，避免脏数据进入持久层。
         @Min(value = 0, message = "年龄不能小于 0") @Max(value = 150, message = "年龄不能大于 150") Integer age
 ) {

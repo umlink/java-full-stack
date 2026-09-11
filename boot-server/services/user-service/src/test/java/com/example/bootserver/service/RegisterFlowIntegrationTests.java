@@ -5,6 +5,7 @@ import com.example.bootserver.common.error.BusinessException;
 import com.example.bootserver.common.error.ErrorCode;
 import com.example.bootserver.controller.dto.RegisterRequest;
 import com.example.bootserver.entity.Role;
+import com.example.bootserver.security.RoleCodes;
 import com.example.bootserver.entity.User;
 import com.example.bootserver.entity.UserRole;
 import com.example.bootserver.mapper.RoleMapper;
@@ -59,7 +60,7 @@ class RegisterFlowIntegrationTests {
         assertThat(saved.getStatus()).isEqualTo(User.STATUS_ACTIVE);
 
         // 默认只绑定 USER 角色；请求体没有 role 字段，普通用户永远拿不到 ADMIN
-        Role userRole = roleMapper.selectOne(new LambdaQueryWrapper<Role>().eq(Role::getCode, "USER"));
+        Role userRole = roleMapper.selectOne(new LambdaQueryWrapper<Role>().eq(Role::getCode, RoleCodes.USER));
         List<Long> boundRoleIds = findRoleIdsByUserId(userId);
         assertThat(boundRoleIds).containsExactly(userRole.getId());
     }

@@ -1,6 +1,7 @@
 package com.example.bootserver.security;
 
 import com.example.bootserver.mapper.UserAuthorityMapper;
+import com.example.bootserver.entity.User;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.stereotype.Service;
@@ -15,17 +16,24 @@ import java.util.List;
 @Service
 public class UserAuthorityService {
 
-    /** 用户管理权限码：安全路由、数据库种子和测试共同遵循的稳定契约。 */
-    public static final String USER_MANAGEMENT_PERMISSION = "user:manage";
-
     private final UserAuthorityMapper userAuthorityMapper;
 
     public UserAuthorityService(UserAuthorityMapper userAuthorityMapper) {
         this.userAuthorityMapper = userAuthorityMapper;
     }
 
+    /**
+     * 判断 JWT 主体是否仍可作为当前请求的认证身份。
+     *
+     * 权限为空的普通用户仍是合法身份，不能用 authority 列表是否为空替代此校验；
+     * 必须直接确认用户行仍存在、未删除且状态正常。
+     */
+    public boolean isActiveUser(Long userId) {
+        return userAuthorityMapper.selectActiveUserIdById(userId, User.STATUS_ACTIVE, User.NOT_DELETED) != null;
+    }
+
     public List<GrantedAuthority> loadAuthorities(Long userId) {
-        return userAuthorityMapper.selectPermissionCodesByUserId(userId).stream()
+        return userAuthorityMapper.selectPermissionCodesByUserId(userId, User.STATUS_ACTIVE, User.NOT_DELETED).stream()
                 // Security 只判断字符串 authority 是否匹配；权限码来自数据库关系而非 JWT，避免令牌内权限过期。
                 .map(SimpleGrantedAuthority::new)
                 .map(GrantedAuthority.class::cast)

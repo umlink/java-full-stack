@@ -24,8 +24,6 @@ import java.io.IOException;
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
-    private static final String BEARER_PREFIX = "Bearer ";
-
     private final JwtTokenService jwtTokenService;
     private final UserAuthorityService userAuthorityService;
     private final RestAuthenticationEntryPoint authenticationEntryPoint;
@@ -47,12 +45,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             filterChain.doFilter(request, response);
             return;
         }
-        if (!authorization.startsWith(BEARER_PREFIX)) {
+        if (!authorization.startsWith(BearerAuthentication.SCHEME_PREFIX)) {
             reject(request, response, "Authorization 必须使用 Bearer 方案", null);
             return;
         }
 
-        String token = authorization.substring(BEARER_PREFIX.length()).trim();
+        String token = authorization.substring(BearerAuthentication.SCHEME_PREFIX.length()).trim();
         if (!StringUtils.hasText(token)) {
             reject(request, response, "Bearer token 不能为空", null);
             return;
@@ -60,6 +58,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         try {
             Long userId = jwtTokenService.parseUserId(token);
+            // 令牌有效不等于账号仍有效：停用或逻辑删除后，下一次请求即按未认证处理。
+            if (!userAuthorityService.isActiveUser(userId)) {
+                SecurityContextHolder.clearContext();
+                reject(request, response, "JWT 主体已失效", null);
+                return;
+            }
             // 权限每次从关系表读取：管理员撤销角色后，下一个请求不会继续沿用 JWT 签发时的旧权限。
             UsernamePasswordAuthenticationToken authentication =
                     UsernamePasswordAuthenticationToken.authenticated(userId, null,

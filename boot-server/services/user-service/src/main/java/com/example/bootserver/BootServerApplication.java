@@ -1,8 +1,10 @@
 package com.example.bootserver;
 
+import com.example.bootserver.config.ServletPathProperties;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration;
 
 /**
@@ -13,6 +15,7 @@ import org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoCon
  */
 // JWT 过滤器不使用 UserDetailsService；排除默认内存用户，避免启动时生成无实际用途的随机密码。
 @SpringBootApplication(exclude = UserDetailsServiceAutoConfiguration.class)
+@EnableConfigurationProperties(ServletPathProperties.class)
 @MapperScan("com.example.bootserver.mapper")
 public class BootServerApplication {
 

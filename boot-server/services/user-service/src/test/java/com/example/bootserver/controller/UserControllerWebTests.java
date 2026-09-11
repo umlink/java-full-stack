@@ -1,6 +1,7 @@
 package com.example.bootserver.controller;
 
 import com.example.bootserver.common.error.ErrorCode;
+import com.example.bootserver.common.result.Result;
 import com.example.bootserver.controller.dto.UpdateUserRequest;
 import com.example.bootserver.entity.User;
 import com.example.bootserver.exception.UserNotFoundException;
@@ -54,14 +55,14 @@ class UserControllerWebTests {
             return true;
         });
 
-        // standaloneSetup 不加载 application.yml，因此这里验证 Controller 自己声明的资源路径 /users。
+        // standaloneSetup 不加载 application.yml，因此这里验证 Controller 自己声明的内部资源路径。
         mockMvc.perform(post("/users")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"id":999,"deleted":1,"name":"Dave","email":"dave@example.com","age":32}
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.code").value(Result.SUCCESS_CODE))
                 .andExpect(jsonPath("$.data").value(100));
     }
 
@@ -102,7 +103,7 @@ class UserControllerWebTests {
 
         mockMvc.perform(get("/users/1"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.code").value(Result.SUCCESS_CODE))
                 .andExpect(jsonPath("$.data.id").value(1))
                 // 回归保护：User 会直接作为查询响应 data，密码哈希必须在序列化层被排除。
                 .andExpect(jsonPath("$.data.passwordHash").doesNotExist());
@@ -139,7 +140,7 @@ class UserControllerWebTests {
                                 {"id":999,"status":0,"deleted":1,"age":26}
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.code").value(Result.SUCCESS_CODE))
                 .andExpect(jsonPath("$.data").value(true));
 
         verify(userService).updateUserProfile(org.mockito.ArgumentMatchers.eq(1L), any(UpdateUserRequest.class));
@@ -177,8 +178,8 @@ class UserControllerWebTests {
     @Test
     void pageRejectsOutOfRangeParametersBeforeCallingService() throws Exception {
         mockMvc.perform(get("/users/page")
-                        .param("page", "0")
-                        .param("size", "10"))
+                .param("page", "0")
+                .param("size", "10"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(ErrorCode.PARAMETER_ERROR.getCode()))
                 .andExpect(jsonPath("$.message").value("页码必须大于 0"));
@@ -189,8 +190,8 @@ class UserControllerWebTests {
     @Test
     void pageRejectsSizeAboveMaximumBeforeCallingService() throws Exception {
         mockMvc.perform(get("/users/page")
-                        .param("page", "1")
-                        .param("size", "101"))
+                .param("page", "1")
+                .param("size", "101"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(ErrorCode.PARAMETER_ERROR.getCode()))
                 .andExpect(jsonPath("$.message").value("每页数量不能超过 100"));
@@ -209,4 +210,5 @@ class UserControllerWebTests {
         // 验证顺序：校验失败在 Controller 方法执行前中断，因此持久化服务绝不能被调用。
         verifyNoInteractions(userService);
     }
+
 }

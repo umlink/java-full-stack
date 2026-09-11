@@ -31,7 +31,7 @@ import java.util.List;
  * <p>
  * 设计对齐：RESTful 资源风格（阶段二 03 讲）、统一响应体 Result（03 讲）、构造器注入（阶段一 01 讲）。
  * 逻辑删除、分页均由 MyBatis-Plus 全局配置接管，接口层只声明意图。外部统一前缀由
- * {@code spring.mvc.servlet.path=/api} 配置，本类只维护资源路径，避免每个 Controller 重复写 /api。
+ * {@code spring.mvc.servlet.path} 配置，本类只维护资源路径，避免每个 Controller 复制部署前缀。
  */
 @RestController
 @RequestMapping("/users")
@@ -46,7 +46,7 @@ public class UserController {
     }
 
     /**
-     * 当前登录用户：GET /api/users/me。
+     * 当前登录用户：GET /users/me（外部前缀由运行时配置决定）。
      *
      * {@code @AuthenticationPrincipal} 从 SecurityContext 取出过滤器写入的 principal；本项目此阶段保存的是用户 ID。
      * 该接口只验证“已认证可访问”，不要求后台管理权限；其余用户管理资源由 M1-08 的权限规则保护。
@@ -57,28 +57,28 @@ public class UserController {
         return Result.ok(userId);
     }
 
-    /** 列表：GET /api/users（/api 由 MVC 前缀配置提供） */
+    /** 列表：GET /users（外部前缀由运行时配置决定）。 */
     @GetMapping
     @Operation(summary = "查询用户列表", description = "需要 user:manage 权限，按用户 ID 升序返回。")
     public Result<List<User>> listUsers() {
         return Result.ok(userService.listUsers());
     }
 
-    /** 分页：GET /api/users/page?page=1&size=10 */
+    /** 分页：GET /users/page?page=1&size=10（外部前缀由运行时配置决定）。 */
     @GetMapping("/page")
     @Operation(summary = "分页查询用户", description = "需要 user:manage 权限；页码从 1 开始，每页最多 100 条。")
     public Result<Page<User>> listUsersByPage(@Valid @ModelAttribute UserPageRequest request) {
         return Result.ok(userService.listUsersByPage(request.getPage(), request.getSize()));
     }
 
-    /** 按名称模糊查询（LambdaQueryWrapper 写法示例）：GET /api/users/by-name?name=xxx */
+    /** 按名称模糊查询：GET /users/by-name?name=xxx（外部前缀由运行时配置决定）。 */
     @GetMapping("/by-name")
     @Operation(summary = "按名称搜索用户", description = "需要 user:manage 权限，按用户 ID 升序返回匹配项。")
     public Result<List<User>> searchUsersByName(@RequestParam String name) {
         return Result.ok(userService.searchUsersByName(name));
     }
 
-    /** 详情：GET /api/users/{id} */
+    /** 详情：GET /users/{id}（外部前缀由运行时配置决定）。 */
     @GetMapping("/{id}")
     @Operation(summary = "查询用户详情", description = "需要 user:manage 权限；用户不存在时返回 404/40400。")
     public Result<User> getUserById(@PathVariable Long id) {
@@ -86,7 +86,7 @@ public class UserController {
     }
 
     /**
-     * 新增：POST /api/users。
+     * 新增：POST /users（外部前缀由运行时配置决定）。
      * <p>
      * 接口只接收创建 DTO，再手动映射为实体。{@code @Valid} 会先触发 DTO 上的字段校验；
      * 校验失败时方法不会执行，异常由全局处理器转换为统一的参数错误响应。当前仅有三个字段，
@@ -108,10 +108,10 @@ public class UserController {
     }
 
     /**
-     * 更新：PUT /api/users/{id}。
+     * 更新：PUT /users/{id}（外部前缀由运行时配置决定）。
      * <p>
      * URL 中的 {@code id} 是本次要修改的目标资源；请求体只描述要修改的字段。例如请求
-     * {@code PUT /api/users/1} 携带 {@code {"age":26}}，表示把 ID 为 1 的用户年龄改为 26。
+     * {@code PUT /users/1} 携带 {@code {"age":26}}，表示把 ID 为 1 的用户年龄改为 26；外部前缀由配置决定。
      * 在当前 MyBatis-Plus 默认字段策略下，实体中为 {@code null} 的普通字段通常不会出现在
      * UPDATE 的 SET 子句中，因此该请求不会主动覆盖 name 和 email。
      * <p>
@@ -123,7 +123,7 @@ public class UserController {
         return Result.ok(userService.updateUserProfile(id, request));
     }
 
-    /** 删除（逻辑删除）：DELETE /api/users/{id} —— 实际执行 UPDATE t_user SET deleted=1 */
+    /** 删除（逻辑删除）：DELETE /users/{id} —— 实际执行 UPDATE t_user SET deleted=1。 */
     @DeleteMapping("/{id}")
     @Operation(summary = "逻辑删除用户", description = "需要 user:manage 权限；用户不存在时返回 404/40400。")
     public Result<Boolean> deleteUser(@PathVariable Long id) {
