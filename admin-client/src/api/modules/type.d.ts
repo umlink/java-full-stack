@@ -26,3 +26,21 @@ export interface RegisterRequest {
   email: string
   password: string
 }
+
+/**
+ * 用户条目：对齐后端 User 实体的对外 JSON 字段（passwordHash 已被服务端 @JsonIgnore 排除）。
+ *
+ * 除 id 外均可空：M0 旧数据与未填写资料存在 null 字段，渲染方（M1-C-06）自行决定空值展示。
+ * createTime / updateTime 为 ISO 8601 字符串（后端 LocalDateTime 序列化产物）。
+ */
+export interface UserSummary {
+  id: number
+  username: string | null
+  name: string | null
+  email: string | null
+  status: number | null
+  age: number | null
+  deleted: number | null
+  createTime: string | null
+  updateTime: string | null
+}

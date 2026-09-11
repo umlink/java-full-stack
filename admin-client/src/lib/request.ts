@@ -1,4 +1,5 @@
 import { apiBaseUrl } from "@/lib/env"
+import { clearToken, getToken } from "@/lib/authSession"
 
 /**
  * 后端统一响应体，对齐 boot-server `common-core` 的 `Result<T>` 契约。
@@ -41,22 +42,35 @@ export class ApiError extends Error {
   }
 }
 
+/** 后端 ErrorCode 的未认证业务码：携带会话的请求收到它代表令牌已失效 */
+export const API_CODE_UNAUTHORIZED = 40100
+
+/** 后端 ErrorCode 的无权限业务码：会话仍有效，只是当前账号无权访问目标资源 */
+export const API_CODE_FORBIDDEN = 40300
+
 /**
  * 统一 HTTP 入口：把「网络失败 / 非受控 HTTP 失败 / 业务码失败」都折叠成 `ApiError`，
  * 成功时直接返回已解包的 `Result.data`，调用方拿到的就是业务数据本身。
+ *
+ * 会话存在时自动携带 `Authorization: Bearer <token>`，调用方不手工拼认证头。
  *
  * @param path 资源路径（如 `/auth/login`），不含主机、端口与 `/api` 前缀
  * @param init 透传给 fetch 的初始化参数，`body` 存在时自动补 JSON 请求头
  */
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const initWithJsonHeaders =
-    init?.body != null
-      ? { ...init, headers: { "Content-Type": "application/json", ...init?.headers } }
-      : init
+  const headers = new Headers(init?.headers)
+  if (init?.body != null && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json")
+  }
+  // 只在已有会话时携带令牌：登录等公开接口不带，其 40100 属于普通业务失败（如密码错误）
+  const accessToken = getToken()
+  if (accessToken) {
+    headers.set("Authorization", `Bearer ${accessToken}`)
+  }
 
   let response: Response
   try {
-    response = await fetch(`${apiBaseUrl}${path}`, initWithJsonHeaders)
+    response = await fetch(`${apiBaseUrl}${path}`, { ...init, headers })
   } catch {
     // fetch 只在网络层失败时抛异常；HTTP 4xx/5xx 走正常返回，不会进入这里
     throw new ApiError("network", 0, 0, "无法连接服务器，请稍后重试")
@@ -77,6 +91,15 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (result && result.code !== 0) {
+    // 携带会话的请求被判定未认证 = 令牌已失效（过期/被替换）：清理本地会话回登录页重新建立。
+    // 不带令牌的公开接口（如登录）不会走到这里，其 40100 由页面按普通业务失败展示，
+    // 避免登录页输入错误密码时被整页跳转冲掉错误提示。
+    if (accessToken && result.code === API_CODE_UNAUTHORIZED) {
+      clearToken()
+      window.location.assign("/login")
+    }
+    // 403/40300（无权限）保持会话不动：这是账号权限问题而非登录状态问题，
+    // 由页面识别 ApiError.code 后转入无权限状态
     throw new ApiError("business", result.code, response.status, result.message || "请求失败")
   }
 

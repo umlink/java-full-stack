@@ -6,4 +6,5 @@ export type {
   LoginRequest,
   LoginResponse,
   RegisterRequest,
+  UserSummary,
 } from "@/api/modules/type"
