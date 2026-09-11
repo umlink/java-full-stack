@@ -8,7 +8,6 @@ import { ApiError } from "@/lib/request"
 
 /** 表单字段名 → 受控校验文案 */
 type LoginFieldErrors = Partial<Record<"username" | "password", string>>
-const DEFAULT_RETURN_PATH = "/users"
 
 type LoginLocationState = {
   from?: unknown
@@ -23,14 +22,14 @@ function getReturnPath(state: unknown): string {
 
   if (
     typeof returnPath === "string" &&
-    (returnPath === DEFAULT_RETURN_PATH ||
-      returnPath.startsWith(`${DEFAULT_RETURN_PATH}?`) ||
-      returnPath.startsWith(`${DEFAULT_RETURN_PATH}#`))
+    (returnPath === "/users" ||
+      returnPath.startsWith("/users?") ||
+      returnPath.startsWith("/users#"))
   ) {
     return returnPath
   }
 
-  return DEFAULT_RETURN_PATH
+  return "/users"
 }
 
 /**

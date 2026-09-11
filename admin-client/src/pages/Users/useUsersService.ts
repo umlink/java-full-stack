@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from "react"
 
 import type { UserSummary } from "@/api/API"
 import { listUsers } from "@/api/modules/users"
-import { API_CODE_FORBIDDEN, ApiError } from "@/lib/request"
+import { API_RESULT_CODE } from "@/lib/apiContract"
+import { ApiError } from "@/lib/request"
 
 /** 用户目录页的请求状态：加载、就绪、空、失败、无权限，覆盖管理页全部分支 */
 type UsersPageState = "loading" | "ready" | "empty" | "error" | "forbidden"
@@ -89,7 +90,7 @@ async function loadUsers(isCancelled: () => boolean, commit: Commit) {
     if (isCancelled()) {
       return
     }
-    if (error instanceof ApiError && error.code === API_CODE_FORBIDDEN) {
+    if (error instanceof ApiError && error.code === API_RESULT_CODE.FORBIDDEN) {
       commit([], "forbidden", null)
       return
     }
@@ -107,7 +108,6 @@ export function useUsersService() {
   const [rows, setRows] = useState<UserRow[]>([])
   const [isRefreshing, setIsRefreshing] = useState(false)
 
-  // 提交回调只做落状态；各 setter 引用稳定，useCallback 空依赖保证 effect 不重复执行
   const commit = useCallback<Commit>((nextRows, nextState, message) => {
     setRows(nextRows)
     setState(nextState)
@@ -123,10 +123,6 @@ export function useUsersService() {
     }
   }, [commit])
 
-  /**
-   * 手动刷新入口：请求期间 `isRefreshing = true`，页面据此禁用按钮并旋转图标；
-   * 期间保留当前列表与状态，刷新完成后按同一加载规则更新。
-   */
   async function refresh() {
     setIsRefreshing(true)
     try {

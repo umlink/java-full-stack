@@ -1,8 +1,20 @@
 /* eslint-disable react-refresh/only-export-components */
 import * as React from "react"
 
-type Theme = "dark" | "light" | "system"
-type ResolvedTheme = "dark" | "light"
+const THEME = {
+  DARK: "dark",
+  LIGHT: "light",
+  SYSTEM: "system",
+} as const
+const DEFAULT_THEME = THEME.SYSTEM
+const DEFAULT_THEME_STORAGE_KEY = "theme"
+const THEME_SHORTCUT_KEY = "d"
+const COLOR_SCHEME_QUERY = "(prefers-color-scheme: dark)"
+const THEME_VALUES = [THEME.DARK, THEME.LIGHT, THEME.SYSTEM] as const
+const THEME_CLASS_NAMES = [THEME.LIGHT, THEME.DARK] as const
+
+type Theme = (typeof THEME_VALUES)[number]
+type ResolvedTheme = typeof THEME.DARK | typeof THEME.LIGHT
 
 type ThemeProviderProps = {
   children: React.ReactNode
@@ -15,9 +27,6 @@ type ThemeProviderState = {
   theme: Theme
   setTheme: (theme: Theme) => void
 }
-
-const COLOR_SCHEME_QUERY = "(prefers-color-scheme: dark)"
-const THEME_VALUES: Theme[] = ["dark", "light", "system"]
 
 const ThemeProviderContext = React.createContext<
   ThemeProviderState | undefined
@@ -33,10 +42,10 @@ function isTheme(value: string | null): value is Theme {
 
 function getSystemTheme(): ResolvedTheme {
   if (window.matchMedia(COLOR_SCHEME_QUERY).matches) {
-    return "dark"
+    return THEME.DARK
   }
 
-  return "light"
+  return THEME.LIGHT
 }
 
 function disableTransitionsTemporarily() {
@@ -79,8 +88,8 @@ function isEditableTarget(target: EventTarget | null) {
 
 export function ThemeProvider({
   children,
-  defaultTheme = "system",
-  storageKey = "theme",
+  defaultTheme = DEFAULT_THEME,
+  storageKey = DEFAULT_THEME_STORAGE_KEY,
   disableTransitionOnChange = true,
   ...props
 }: ThemeProviderProps) {
@@ -110,7 +119,7 @@ export function ThemeProvider({
         ? disableTransitionsTemporarily()
         : null
 
-      root.classList.remove("light", "dark")
+      root.classList.remove(...THEME_CLASS_NAMES)
       root.classList.add(resolvedTheme)
 
       if (restoreTransitions) {
@@ -123,13 +132,13 @@ export function ThemeProvider({
   React.useEffect(() => {
     applyTheme(theme)
 
-    if (theme !== "system") {
+    if (theme !== THEME.SYSTEM) {
       return undefined
     }
 
     const mediaQuery = window.matchMedia(COLOR_SCHEME_QUERY)
     const handleChange = () => {
-      applyTheme("system")
+      applyTheme(THEME.SYSTEM)
     }
 
     mediaQuery.addEventListener("change", handleChange)
@@ -153,19 +162,19 @@ export function ThemeProvider({
         return
       }
 
-      if (event.key.toLowerCase() !== "d") {
+      if (event.key.toLowerCase() !== THEME_SHORTCUT_KEY) {
         return
       }
 
       setThemeState((currentTheme) => {
         const nextTheme =
-          currentTheme === "dark"
-            ? "light"
-            : currentTheme === "light"
-              ? "dark"
-              : getSystemTheme() === "dark"
-                ? "light"
-                : "dark"
+          currentTheme === THEME.DARK
+            ? THEME.LIGHT
+            : currentTheme === THEME.LIGHT
+              ? THEME.DARK
+              : getSystemTheme() === THEME.DARK
+                ? THEME.LIGHT
+                : THEME.DARK
 
         localStorage.setItem(storageKey, nextTheme)
         return nextTheme

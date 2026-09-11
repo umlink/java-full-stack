@@ -2,9 +2,9 @@
 
 BootMall B 端管理后台，技术栈为 React 19、TypeScript、Vite、Tailwind CSS 4、shadcn/ui 与 Lucide。
 
-## 开发进度
+## 开发约定
 
-本工程当前推进 M1-C 管理后台接入；进度与当前卡片以 [实践计划与进度](../docs/10-实战产品蓝图/实践计划/README.md) 为准，必须按卡片顺序实施。
+本工程的实践顺序、解锁条件和完成状态只以 [实践计划与进度](../docs/10-实战产品蓝图/实践计划/README.md) 为准；本文件不维护进度副本。开发必须按计划中的已解锁卡片实施。
 
 已有后端接口文档：`http://localhost:8080/api/swagger-ui/index.html`。开发时 `VITE_API_BASE_URL=/api`（复制 `.env.example` 为 `.env`），由 Vite dev server 同源代理转发到本地后端；本机 8080 被占用时用 `BACKEND_ORIGIN=http://localhost:8082 pnpm dev` 覆盖代理目标。不要在页面中硬编码地址。
 

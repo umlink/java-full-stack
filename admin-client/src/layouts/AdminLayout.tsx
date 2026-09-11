@@ -1,4 +1,4 @@
-import { LayoutDashboard, LogOut, Store, Users } from "lucide-react"
+import { LogOut, Store, Users } from "lucide-react"
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom"
 
 import {
@@ -27,7 +27,6 @@ import {
 import { useLogout } from "@/hooks/useLogout"
 
 const navigationItems = [
-  { label: "概览", icon: LayoutDashboard, to: "/" },
   { label: "用户", icon: Users, to: "/users" },
 ]
 
@@ -55,7 +54,7 @@ export function AdminLayout() {
                 {navigationItems.map(({ icon: Icon, label, to }) => (
                   <SidebarMenuItem key={to}>
                     <SidebarMenuButton
-                      isActive={pathname === to || (to === "/" && pathname === "/users")}
+                      isActive={pathname === to}
                       render={<NavLink to={to} />}
                       tooltip={label}
                     >
