@@ -144,6 +144,54 @@ public class UserService extends ServiceImpl<UserMapper, User> {
     }
 
     /**
+     * 本地管理员引导（M1-C-05）：确保指定账号存在并绑定 ADMIN 角色，供启动引导器调用。
+     * <p>
+     * 这是「受控管理流程」的本地形态：账号不存在时按注册同规则创建（BCrypt 哈希、状态正常、
+     * 展示名先用用户名），已存在则只补缺失的 ADMIN 关联——幂等，重复启动不重复建号也不重复绑定，
+     * 不覆盖已有学习数据。只绑 ADMIN 角色保持最小权限；密码仅在内存中经 BCrypt 后落库，
+     * 不进入任何日志。生产环境不注入引导变量即不会执行本方法。
+     *
+     * @return true 表示本次新建了账号；false 表示账号已存在、仅确认角色关联
+     */
+    @Transactional
+    public boolean ensureLocalAdmin(String username, String password) {
+        User user = lambdaQuery().eq(User::getUsername, username).one();
+        boolean created = false;
+        if (user == null) {
+            user = new User();
+            user.setUsername(username);
+            user.setName(username);
+            // 引导账号没有真实邮箱语义，但 t_user.email 非空且唯一：按登录名生成稳定的占位邮箱
+            user.setEmail(username + "@local.test");
+            user.setPasswordHash(passwordEncoder.encode(password));
+            user.setStatus(User.STATUS_ACTIVE);
+            save(user);
+            created = true;
+        }
+        bindAdminRoleIfAbsent(user.getId());
+        return created;
+    }
+
+    /** 绑定 ADMIN 角色；已绑定时不再重复插入，保证引导在多次启动间幂等。 */
+    private void bindAdminRoleIfAbsent(Long userId) {
+        Role adminRole = roleMapper.selectOne(new LambdaQueryWrapper<Role>()
+                .eq(Role::getCode, "ADMIN"));
+        if (adminRole == null) {
+            throw new IllegalStateException("ADMIN 角色不存在，请检查 schema.sql 初始数据");
+        }
+
+        long bound = userRoleMapper.countByUserIdAndRoleId(userId, adminRole.getId());
+        if (bound > 0) {
+            return;
+        }
+
+        UserRole binding = new UserRole();
+        binding.setUserId(userId);
+        binding.setRoleId(adminRole.getId());
+        userRoleMapper.insert(binding);
+    }
+
+    /**
      * 查询必须存在的用户。
      *
      * 查询结果为 {@code null} 时在业务层转换为用户域异常，Controller 因而只处理 HTTP 输入输出，

@@ -86,6 +86,32 @@ mvnw.cmd -pl services/user-service spring-boot:run
 - H2 控制台：本地需要时先执行 `export H2_CONSOLE_ENABLED=true`，再访问 `http://localhost:8080/h2-console`（JDBC URL 填 `jdbc:h2:file:../../data/bootapp;MODE=MySQL`，用户 `sa`，密码留空——与 datasource 一致，相对服务模块工作目录）
 - 数据库文件：`boot-server/data/`（随工程走，可提交记录——学习期每次实验的库状态都留档，方便回看 diff 与回滚；**首次启动自动建表灌初始数据，data/ 已有数据则保留历史**）
 
+## 本地管理员测试账号（M1-C-05）
+
+管理接口（如 `GET /api/users`）需要 `user:manage` 权限，公开注册只能得到 USER 角色（访问返回 403）。本地验收需要管理员时，**通过环境变量在启动时引导**，不需要手工改数据库：
+
+```bash
+export BOOT_ADMIN_USERNAME="boot-admin"
+export BOOT_ADMIN_PASSWORD="你的本地密码"   # 自选，不提交、不写进任何文件
+```
+
+行为说明：
+
+- 两个变量必须**同时提供**（只填一项会在启动时报配置错误）；都不设置时引导不执行，**生产环境不设置即不会创建任何管理员**。
+- 账号不存在时自动创建并绑定 `ADMIN` 角色；已存在时只补缺失的角色关联——重复启动幂等，不会重复建号，也不覆盖已有数据。
+- 密码只经 BCrypt 哈希后落库，不写入日志、代码或文档。
+
+验证（配合上方启动命令）：
+
+```bash
+# 登录引导账号，取响应里的 accessToken
+curl -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"boot-admin","password":"你的本地密码"}'
+# 管理员访问用户列表应得到 200 / code:0；普通 USER 账号访问则得到 403 / 40300
+curl http://localhost:8080/api/users -H "Authorization: Bearer <accessToken>"
+```
+
 ## 接口一览
 
 **统一接口前缀**：`spring.mvc.servlet.path` 在 `application.yml` 中配置为 `/api`。Controller 仅声明资源路径（例如 `/users`），因此外部接口为 `/api/users`；后期调整为 `/api/v1` 时只修改该配置，不逐个修改 Controller。H2 Console 保持 `http://localhost:8080/h2-console`，不受 MVC 前缀影响。

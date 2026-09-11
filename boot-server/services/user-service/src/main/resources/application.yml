@@ -44,6 +44,13 @@ app:
     # Spring Boot 用 Duration 绑定该值；改配置即可调整新签发令牌的有效期。
     access-token-ttl: PT30M
 
+  # 本地管理员引导（M1-C-05）：默认留空 = 不启用，生产环境不设置即不会创建任何管理员。
+  # username 与 password 必须同时注入（只填一项会拒绝启动）；账号不存在时创建并绑定
+  # ADMIN 角色，已存在则只补角色关联，重复启动幂等。密码只从环境变量注入，不入仓库。
+  local-admin:
+    username: ${BOOT_ADMIN_USERNAME:}
+    password: ${BOOT_ADMIN_PASSWORD:}
+
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true

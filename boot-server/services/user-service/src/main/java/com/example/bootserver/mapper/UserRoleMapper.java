@@ -27,4 +27,12 @@ public interface UserRoleMapper {
             WHERE user_id = #{userId}
             """)
     List<UserRole> selectByUserId(@Param("userId") Long userId);
+
+    /** 指定用户与角色的关联是否已存在：本地管理员引导用它实现幂等绑定 */
+    @Select("""
+            SELECT COUNT(*)
+            FROM t_user_role
+            WHERE user_id = #{userId} AND role_id = #{roleId}
+            """)
+    long countByUserIdAndRoleId(@Param("userId") Long userId, @Param("roleId") Long roleId);
 }
