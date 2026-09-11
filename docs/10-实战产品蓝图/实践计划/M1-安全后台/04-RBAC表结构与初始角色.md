@@ -31,6 +31,6 @@
 
 日期：2026-09-09
 
-提交：待提交
+提交：`f4f96bc`（feat: 完成用户资源异常与 RBAC 初始化）
 
 测试与接口证据：`./mvnw -pl services/user-service -am test`：15 个测试通过；验证 `ADMIN`、`USER`、管理员管理权限关联存在，并复跑 `schema.sql` 确认初始 RBAC 数据不重复。

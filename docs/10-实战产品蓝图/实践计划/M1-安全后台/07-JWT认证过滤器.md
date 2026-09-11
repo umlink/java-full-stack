@@ -31,7 +31,7 @@ Filter Chain 顺序、SecurityContext、认证与授权的区别、401 的语义
 
 日期：2026-09-09
 
-提交：待提交
+提交：`cc49d4d`（feat: 完成JWT认证与RBAC授权）
 
 测试与接口证据：
 

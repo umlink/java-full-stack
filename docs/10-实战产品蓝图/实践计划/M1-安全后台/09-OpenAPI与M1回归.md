@@ -32,6 +32,6 @@ OpenAPI 契约、集成测试覆盖范围、回归门禁、可复现验收。
 
 日期：2026-09-09
 
-提交：待提交
+提交：`f51dfa5`（feat: 完成M1接口文档与回归验收）
 
 测试与接口证据：`./mvnw -pl services/user-service -am test`：42 个测试通过。真实 HTTP 集成测试验证 `GET /api/v3/api-docs` 返回 200 且包含 `/auth/register`、`/users`、`bearerAuth`，`GET /api/swagger-ui/index.html` 返回 200；M1-08 已覆盖管理接口无 token 的 401/40100、USER 的 403/40300 和 ADMIN 的 200/0。

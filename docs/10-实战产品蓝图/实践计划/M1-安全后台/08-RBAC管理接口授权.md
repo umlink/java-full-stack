@@ -31,6 +31,6 @@ GrantedAuthority、角色和权限的命名、最小授权、401 与 403 的区�
 
 日期：2026-09-09
 
-提交：待提交
+提交：`cc49d4d`（feat: 完成JWT认证与RBAC授权）
 
 测试与接口证据：`./mvnw -pl services/user-service -am test`：41 个测试通过；真实 HTTP 集成测试覆盖 `GET /api/users` 的无 token `401/40100`、`USER` token `403/40300`、授予 `ADMIN` 角色后的 `200/0`。`/api/users/me` 保持为任意已认证用户可访问的身份自查接口。
