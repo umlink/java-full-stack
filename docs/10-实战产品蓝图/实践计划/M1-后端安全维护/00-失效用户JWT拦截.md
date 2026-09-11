@@ -34,8 +34,12 @@ JWT 的签名有效不等于主体仍有效；认证（主体是否可建立身�
 
 ## 完成记录
 
-日期：
+日期：2026-09-11
 
-提交：
+提交：未提交
 
 测试与接口证据：
+
+- 在 Temurin JDK 25.0.4.1 下，以 `mvnw.cmd -pl services/user-service -am clean test` 完成回归；Windows 上运行此 JDK 时，本次进程临时设定 `TEMP`、`TMP` 为 `C:\Temp` 以避开 AF_UNIX 临时路径问题；9 个测试套件共 52 项测试，0 失败、0 错误。
+- `JwtAuthenticationIntegrationTests` 通过真实 HTTP 请求验证：正常 USER 的 `/api/users/me` 为成功、`/api/users` 为 `403/40300`；正常 ADMIN 的 `/api/users` 为成功。
+- 同一测试验证用户停用或逻辑删除后，旧 JWT 分别访问 `/api/users/me` 与 `/api/users` 均为 `401/40100`。
