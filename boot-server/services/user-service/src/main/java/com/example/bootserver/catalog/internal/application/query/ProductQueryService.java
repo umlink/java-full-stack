@@ -16,9 +16,11 @@ import java.util.Set;
 public class ProductQueryService implements CatalogQueryApi {
 
     private final CatalogQueryRepository queryRepository;
+    private final ProductDetailsCache productDetailsCache;
 
-    public ProductQueryService(CatalogQueryRepository queryRepository) {
+    public ProductQueryService(CatalogQueryRepository queryRepository, ProductDetailsCache productDetailsCache) {
         this.queryRepository = queryRepository;
+        this.productDetailsCache = productDetailsCache;
     }
 
     /** 商品上下文提供给库存管理的只读契约：草稿或下架 SKU 仍可配置库存。 */
@@ -49,10 +51,15 @@ public class ProductQueryService implements CatalogQueryApi {
     /** 下架、草稿、逻辑删除和不存在的商品都以相同的不存在语义返回。 */
     @Transactional(readOnly = true)
     public ProductDetails getProductById(Long id) {
+        ProductDetails cached = productDetailsCache.get(id).orElse(null);
+        if (cached != null) {
+            return cached;
+        }
         ProductDetails product = queryRepository.findOnSaleProduct(id);
         if (product == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "商品不存在");
         }
+        productDetailsCache.put(product);
         return product;
     }
 }

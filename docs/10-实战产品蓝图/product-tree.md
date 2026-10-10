@@ -32,8 +32,9 @@ boot-server/
         │   │   │       │   ├── command/      商品/SKU 写用例与命令结果
         │   │   │       │   └── query/        商品页面投影、模块查询 API 实现与查询端口
         │   │   │       ├── domain/           Product、Sku 与 CatalogRepository
-        │   │   │       └── infrastructure/persistence/
-        │   │   │           MyBatis 命令/查询适配器、Mapper 与表实体
+        │   │   │       └── infrastructure/
+        │   │   │           ├── cache/         Redis 商品详情旁路缓存、事务后失效与指标
+        │   │   │           └── persistence/   MyBatis 命令/查询适配器、Mapper 与表实体
         │   │   ├── cart/                     本人购物车
         │   │   │   ├── api/                  当前无跨模块购物车契约
         │   │   │   └── internal/
@@ -71,14 +72,14 @@ boot-server/
         │   │   ├── config/                    跨模块框架配置：MVC 路径、OpenAPI、MyBatis-Plus
         │   │   └── handler/                   全局 HTTP 异常转换
         │   └── resources/
-        │       ├── application.yml            数据源、JWT、MVC 路径、订单 worker ID
+        │       ├── application.yml            数据源、JWT、Redis、缓存、指标、MVC 路径与订单 worker ID
         │       └── db/schema.sql              用户/RBAC、商品、购物车、库存、订单与支付表
         └── test/
             ├── java/com/example/bootserver/
             │   ├── architecture/ModuleArchitectureTest.java
             │   │   跨模块公开 API、四层依赖、CQRS 分离与循环依赖约束
             │   ├── identity/internal/         身份 Web、认证、持久化与管理员引导回归
-            │   ├── catalog/internal/          商品领域、持久化和真实 HTTP 回归
+            │   ├── catalog/internal/          商品领域、持久化、缓存降级和真实 Redis/HTTP 回归
             │   ├── cart/internal/             购物车领域与真实 HTTP/并发回归
             │   ├── inventory/internal/        库存领域、架构与真实 HTTP/并发回归
             │   ├── order/internal/            订单领域、架构、幂等与查询回归

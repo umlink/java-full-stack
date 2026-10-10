@@ -52,6 +52,18 @@
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
 
+        <!-- Redis 旁路缓存使用 StringRedisTemplate 与 Lettuce，版本由 Spring Boot BOM 托管。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
+        <!-- 暴露健康状态与 Micrometer 缓存指标，版本由 Spring Boot BOM 托管。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
         <!-- SpringDoc 自动从 Controller、DTO 和 Bean Validation 生成 OpenAPI，并提供 Swagger UI。 -->
         <dependency>
             <groupId>org.springdoc</groupId>

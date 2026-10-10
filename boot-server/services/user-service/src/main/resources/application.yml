@@ -36,9 +36,21 @@ spring:
       # 打开后 JDBC URL 填上面 datasource.url 那一行，用户名 sa、密码留空。
       enabled: ${H2_CONSOLE_ENABLED:false}
 
+  data:
+    redis:
+      host: ${BOOT_REDIS_HOST:localhost}
+      port: ${BOOT_REDIS_PORT:6379}
+      connect-timeout: ${BOOT_REDIS_CONNECT_TIMEOUT:PT1S}
+      timeout: ${BOOT_REDIS_TIMEOUT:PT1S}
+
 # ${JWT_SECRET_BASE64:} 表示优先读取环境变量，冒号后为空默认值；未配置时由 @NotBlank 拒绝启动。
 # 密钥不写入仓库；Base64 解码后必须至少有 32 字节才能用于 HS256。启动前：export JWT_SECRET_BASE64="$(openssl rand -base64 32)"
 app:
+  catalog-cache:
+    # 默认关闭，未配置 Redis 的开发与测试环境继续直接读取数据库。
+    enabled: ${BOOT_CATALOG_CACHE_ENABLED:false}
+    # 商品详情是可重建的性能副本；主动失效失败时由 TTL 限制陈旧窗口。
+    product-detail-ttl: ${BOOT_CATALOG_CACHE_PRODUCT_DETAIL_TTL:PT10M}
   order:
     # 单实例学习环境使用 0；多实例部署必须为每个实例配置不同的 worker ID。
     worker-id: ${BOOT_ORDER_WORKER_ID:0}
@@ -66,3 +78,13 @@ mybatis-plus:
       logic-delete-field: deleted
       logic-delete-value: 1
       logic-not-delete-value: 0
+
+management:
+  health:
+    redis:
+      # 缓存关闭时 Redis 不参与应用健康判定；开启后才检查真实依赖。
+      enabled: ${app.catalog-cache.enabled:false}
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics

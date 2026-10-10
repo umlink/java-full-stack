@@ -18,9 +18,12 @@ import java.util.List;
 public class ProductManagementService {
 
     private final CatalogRepository catalogRepository;
+    private final CatalogCacheInvalidator cacheInvalidator;
 
-    public ProductManagementService(CatalogRepository catalogRepository) {
+    public ProductManagementService(CatalogRepository catalogRepository,
+                                    CatalogCacheInvalidator cacheInvalidator) {
         this.catalogRepository = catalogRepository;
+        this.cacheInvalidator = cacheInvalidator;
     }
 
     /** 商品和所有 SKU 在同一事务创建，任一业务编码冲突时整体回滚。 */
@@ -58,6 +61,7 @@ public class ProductManagementService {
         if (updated == null) {
             throw new BusinessException(ErrorCode.CONFLICT, "SKU 价格版本已变化");
         }
+        cacheInvalidator.invalidateProduct(updated.getProductId());
         return new SkuPrice(id, updated.getPrice(), updated.getVersion());
     }
 
@@ -77,6 +81,7 @@ public class ProductManagementService {
         if (!catalogRepository.updateProductStatus(updated)) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "商品不存在");
         }
+        cacheInvalidator.invalidateProduct(id);
         return new ProductStatus(id, updated.status());
     }
 }
