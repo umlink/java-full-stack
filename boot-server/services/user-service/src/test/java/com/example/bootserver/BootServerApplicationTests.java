@@ -1,10 +1,10 @@
 package com.example.bootserver;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.example.bootserver.entity.User;
-import com.example.bootserver.security.PermissionCodes;
-import com.example.bootserver.security.RoleCodes;
-import com.example.bootserver.mapper.UserMapper;
+import com.example.bootserver.identity.internal.infrastructure.persistence.User;
+import com.example.bootserver.identity.internal.domain.PermissionCodes;
+import com.example.bootserver.identity.internal.domain.RoleCodes;
+import com.example.bootserver.identity.internal.infrastructure.persistence.UserMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ClassPathResource;

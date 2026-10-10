@@ -16,9 +16,12 @@ import org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoCon
 // JWT 过滤器不使用 UserDetailsService；排除默认内存用户，避免启动时生成无实际用途的随机密码。
 @SpringBootApplication(exclude = UserDetailsServiceAutoConfiguration.class)
 @EnableConfigurationProperties(ServletPathProperties.class)
-@MapperScan({"com.example.bootserver.mapper", "com.example.bootserver.cart.infrastructure",
-        "com.example.bootserver.stock.infrastructure", "com.example.bootserver.order.infrastructure",
-        "com.example.bootserver.payment.infrastructure"})
+@MapperScan({"com.example.bootserver.identity.internal.infrastructure.persistence",
+        "com.example.bootserver.catalog.internal.infrastructure.persistence",
+        "com.example.bootserver.cart.internal.infrastructure",
+        "com.example.bootserver.inventory.internal.infrastructure",
+        "com.example.bootserver.order.internal.infrastructure",
+        "com.example.bootserver.payment.internal.infrastructure"})
 public class BootServerApplication {
 
     public static void main(String[] args) {

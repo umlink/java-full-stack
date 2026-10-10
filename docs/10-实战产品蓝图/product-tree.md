@@ -1,136 +1,93 @@
 # 后端实现导航树
 
-按真实目录定位代码：既有商品与用户功能按 `controller/service/mapper/entity` 分包；购物车、库存、订单和支付按业务上下文分包，在内部区分 Web、应用、领域和基础设施。卡片状态以[实践计划与进度](实践计划/README.md)为准。
+后端在一个 Spring Boot 部署单元内按 `identity`、`catalog`、`cart`、`inventory`、`order`、`payment` 六个领域模块组织。每个模块只通过 `api` 暴露跨模块契约，具体实现统一收在 `internal`，内部按接口层、应用层、领域层和基础设施层划分。卡片状态以[实践计划与进度](实践计划/README.md)为准。
 
 ```text
 boot-server/
-├── pom.xml                          Maven（构建工具）聚合工程；Spring Boot 4、Java 25
-├── infrastructure/common-core/      不依赖 HTTP 或数据库的公共契约
+├── pom.xml                                  Maven 聚合工程；统一 Java 25、Spring Boot 与 ArchUnit 版本
+├── infrastructure/common-core/
 │   └── src/main/java/com/example/bootserver/common/
-│       ├── result/Result.java        统一响应 code、message、data
-│       └── error/
-│           ├── ErrorCode.java        稳定错误码与 HTTP 分类
-│           └── BusinessException.java 业务失败交给 Web 层转换
-└── services/user-service/           当前业务模块
+│       ├── result/Result.java                统一响应 code、message、data
+│       └── error/                            稳定错误码与业务异常
+└── services/user-service/
     ├── pom.xml
     └── src/
         ├── main/
         │   ├── java/com/example/bootserver/
-        │   │   ├── BootServerApplication.java  启动入口
-        │   │   ├── cart/                      购物车上下文
-        │   │   │   ├── web/CartController.java、AddCartItemRequest.java、UpdateCartItemRequest.java、CartItemResponse.java
-        │   │   │   │   仅认证接口；数量请求校验与现价响应
-        │   │   │   ├── application/CartService.java、CartWriteStepService.java
-        │   │   │   │   加购重试编排；每个原子写步骤独立事务
-        │   │   │   ├── domain/CartQuantity.java、CartItemRepository.java、CartEntry.java
-        │   │   │   │   数量不变式、仓储端口与只读条目
-        │   │   │   └── infrastructure/CartItemEntity.java、CartItemMapper.java、CartItemRow.java、MyBatisCartItemRepository.java
-        │   │   │       条件累加、唯一键插入、本人数据过滤与关联现价查询
-        │   │   ├── stock/                     库存上下文
-        │   │   │   ├── web/StockController.java、UpdateStockRequest.java、StockResponse.java、StrictStockTotalDeserializer.java
-        │   │   │   │   管理员设置总量、严格整数绑定与查询 total/locked/available
-        │   │   │   ├── application/StockService.java、StockWriteStepService.java
-        │   │   │   │   SKU 存在性协作、条件更新、首次插入竞争重试、预扣结算与释放
-        │   │   │   ├── domain/Stock.java、StockBelowLockedException.java、StockRepository.java
-        │   │   │   │   库存不变式与仓储端口
-        │   │   │   └── infrastructure/StockEntity.java、StockMapper.java、MyBatisStockRepository.java
-        │   │   │       库存表映射与原子设置、预扣、支付实扣、取消释放
-        │   │   ├── order/                     订单上下文
-        │   │   │   ├── web/OrderController.java、CreateOrderRequest.java、CreateOrderResponse.java、OrderPageRequest.java 等
-        │   │   │   │   仅认证的下单、本人查询、取消与确认收货；价格快照响应
-        │   │   │   ├── web/admin/AdminOrderController.java、AdminOrderPageResponse.java、AdminOrderSummaryResponse.java
-        │   │   │   │   order:manage 保护的全量订单分页与发货入口
-        │   │   │   ├── application/OrderService.java、OrderWriteStepService.java、OrderNumberGenerator.java、OrderQueryService.java、OrderQueryRepository.java、OrderPaymentService.java、OrderCancellationService.java、OrderFulfillmentService.java 等
-        │   │   │   │   幂等协调、快照计价、本人/后台查询、支付认领、取消补偿与履约状态迁移
-        │   │   │   ├── domain/
-        │   │   │   │   ├── Order.java、OrderLine.java、OrderStatus.java、OrderRepository.java
-        │   │   │   │   │   订单金额与明细不变式、状态迁移及条件更新仓储端口
-        │   │   │   │   └── IdempotencyKey.java、OrderSelection.java、OrderRequestFingerprint.java、ExistingOrder.java
-        │   │   │   │       用户作用域幂等键、请求语义、指纹与原单投影
-        │   │   │   └── infrastructure/OrderEntity.java、OrderItemEntity.java、OrderMapper.java、OrderItemMapper.java、MyBatisOrderRepository.java、MyBatisOrderQueryRepository.java
-        │   │   │       订单头、明细和用户加幂等键的持久化；本人/后台稳定倒序分页与详情投影
-        │   │   ├── payment/                   支付上下文
-        │   │   │   ├── web/PaymentController.java、PaymentResponse.java
-        │   │   │   │   仅订单所有者可调用的同步模拟支付入口
-        │   │   │   ├── application/PaymentService.java、PaymentNumberGenerator.java、PaymentResult.java
-        │   │   │   │   在同一本地事务编排状态认领、支付落库与库存实扣
-        │   │   │   ├── domain/Payment.java、PaymentStatus.java、PaymentRepository.java
-        │   │   │   │   成功支付单不变式、状态机器值与持久化端口
-        │   │   │   └── infrastructure/PaymentEntity.java、PaymentMapper.java、MyBatisPaymentRepository.java
-        │   │   │       支付表映射与单表持久化
-        │   │   ├── controller/                HTTP 入口与接口数据对象（DTO）
-        │   │   │   ├── AuthController.java     注册、登录并签发 JWT（登录令牌）
-        │   │   │   ├── UserController.java     当前用户与后台用户管理
-        │   │   │   ├── ProductController.java  商品分页/详情；管理员创建、上下架
-        │   │   │   ├── SkuController.java      管理员按版本改价
-        │   │   │   └── dto/
-        │   │   │       ├── RegisterRequest.java、LoginRequest.java、LoginResponse.java
-        │   │   │       ├── CreateUserRequest.java、UpdateUserRequest.java、UserPageRequest.java
-        │   │   │       ├── ProductPageRequest.java、ProductPageResponse.java 等浏览 DTO
-        │   │   │       └── CreateProductRequest.java、CreateSkuRequest.java 等管理 DTO
-        │   │   │           请求字段白名单；商品浏览响应不暴露删除标记和版本
-        │   │   ├── service/                   业务规则与事务边界
-        │   │   │   ├── UserService.java        注册、登录、管理员引导、用户增删改查
-        │   │   │   ├── ProductQueryService.java、OrderableSkuQuote.java 上架过滤、商品详情与下单报价；库存侧 SKU 存在性查询
-        │   │   │   └── ProductManagementService.java
-        │   │   │       商品和 SKU 原子创建；上下架；按版本条件更新价格
-        │   │   ├── mapper/                    MyBatis-Plus（持久化框架）数据访问
-        │   │   │   ├── UserMapper.java、RoleMapper.java、UserRoleMapper.java、UserAuthorityMapper.java
-        │   │   │   └── ProductMapper.java、SkuMapper.java
-        │   │   │       用户权限联表查询；商品和 SKU 单表访问
-        │   │   ├── entity/                    数据库表映射
-        │   │   │   ├── User.java、Role.java、UserRole.java  账号与角色关系
-        │   │   │   └── Product.java、Sku.java   商品状态、逻辑删除、version（改价版本）；
-        │   │   │       金额使用 BigDecimal（精确十进制）
-        │   │   ├── security/                  JWT 认证与 RBAC（基于角色的权限控制）
-        │   │   │   ├── SecurityConfig.java     C 端交易需登录；商品/库存和后台订单分别按权限码保护
-        │   │   │   ├── JwtAuthenticationFilter.java、JwtTokenService.java、UserAuthorityService.java
-        │   │   │   │   验证令牌和当前账号状态，每次请求从数据库加载权限
-        │   │   │   ├── RestAuthenticationEntryPoint.java、RestAccessDeniedHandler.java
-        │   │   │   │   分别返回统一的 401、403 响应
-        │   │   │   └── RoleCodes.java、PermissionCodes.java、BearerAuthentication.java
-        │   │   │       稳定角色码、user/product/order 管理权限码与 Bearer（认证头方案）前缀
-        │   │   ├── config/                    框架与可部署配置
-        │   │   │   ├── MybatisPlusConfig.java  乐观锁与 H2（嵌入式数据库）分页插件
-        │   │   │   ├── PasswordConfig.java     BCrypt（密码哈希算法）编码器
-        │   │   │   ├── ServletPathProperties.java  MVC（Web 接口）外部路径配置
-        │   │   │   ├── OpenApiConfig.java      M2 OpenAPI 元信息与 Bearer 方案
-        │   │   │   └── LocalAdminProperties.java、LocalAdminInitializer.java
-        │   │   │       环境变量控制本地管理员幂等引导
-        │   │   ├── handler/GlobalExceptionHandler.java  统一错误响应
-        │   │   └── exception/UserNotFoundException.java 用户不存在语义
+        │   │   ├── BootServerApplication.java
+        │   │   ├── identity/                 账号、认证、JWT 与 RBAC
+        │   │   │   ├── api/                  当前没有跨模块身份契约；保留明确公开边界
+        │   │   │   └── internal/
+        │   │   │       ├── interfaces/       注册登录、用户管理 HTTP；JWT 过滤器与授权配置
+        │   │   │       ├── application/
+        │   │   │       │   ├── command/      注册、登录校验、资料写入、令牌签发端口
+        │   │   │       │   └── query/        用户投影、权限查询、令牌解析端口
+        │   │   │       ├── domain/           用户账号、角色/权限码与命令仓储端口
+        │   │   │       └── infrastructure/   MyBatis 适配器、JWT 实现、密码与管理员引导配置
+        │   │   ├── catalog/                  商品与 SKU
+        │   │   │   ├── api/                  CatalogQueryApi、OrderableSkuQuote、CartSkuSnapshot
+        │   │   │   └── internal/
+        │   │   │       ├── interfaces/web/   商品浏览、创建、上下架与 SKU 改价
+        │   │   │       ├── application/
+        │   │   │       │   ├── command/      商品/SKU 写用例与命令结果
+        │   │   │       │   └── query/        商品页面投影、模块查询 API 实现与查询端口
+        │   │   │       ├── domain/           Product、Sku 与 CatalogRepository
+        │   │   │       └── infrastructure/persistence/
+        │   │   │           MyBatis 命令/查询适配器、Mapper 与表实体
+        │   │   ├── cart/                     本人购物车
+        │   │   │   ├── api/                  当前无跨模块购物车契约
+        │   │   │   └── internal/
+        │   │   │       ├── interfaces/web/   购物车 HTTP 与请求/响应 DTO
+        │   │   │       ├── application/
+        │   │   │       │   ├── command/      加购、改数量、删除与原子写步骤
+        │   │   │       │   └── query/        购物车投影；经 catalog.api 补齐商品现价
+        │   │   │       ├── domain/           CartItem、CartQuantity 与仓储端口
+        │   │   │       └── infrastructure/   仅访问 t_cart_item 的 MyBatis 适配器
+        │   │   ├── inventory/                库存
+        │   │   │   ├── api/InventoryCommandApi.java  预扣、结算和释放库存的公开命令契约
+        │   │   │   └── internal/
+        │   │   │       ├── interfaces/web/   库存设置与查询 HTTP
+        │   │   │       ├── application/
+        │   │   │       │   ├── command/      设置总量、预扣、结算、释放与条件写入
+        │   │   │       │   └── query/        库存查询投影与查询端口
+        │   │   │       ├── domain/           Stock 不变式与仓储端口
+        │   │   │       └── infrastructure/   库存命令/查询 MyBatis 适配器
+        │   │   ├── order/                    订单
+        │   │   │   ├── api/                  OrderPaymentApi 与支付认领快照
+        │   │   │   └── internal/
+        │   │   │       ├── interfaces/web/   下单、查询、取消、确认收货与后台发货 HTTP
+        │   │   │       ├── application/
+        │   │   │       │   ├── command/      幂等下单、支付认领、取消与履约状态迁移
+        │   │   │       │   └── query/        本人/后台订单投影与查询端口
+        │   │   │       ├── domain/           订单聚合、状态机、请求指纹与仓储端口
+        │   │   │       └── infrastructure/   订单命令/查询 MyBatis 适配器
+        │   │   ├── payment/                  模拟支付
+        │   │   │   ├── api/                  当前无跨模块支付契约
+        │   │   │   └── internal/
+        │   │   │       ├── interfaces/web/   本人支付 HTTP 与响应 DTO
+        │   │   │       ├── application/command/ 支付编排、支付号与命令结果
+        │   │   │       ├── domain/           Payment、PaymentStatus 与仓储端口
+        │   │   │       └── infrastructure/   支付单 MyBatis 适配器
+        │   │   ├── config/                    跨模块框架配置：MVC 路径、OpenAPI、MyBatis-Plus
+        │   │   └── handler/                   全局 HTTP 异常转换
         │   └── resources/
-        │       ├── application.yml           数据源、JWT、MVC 路径、订单 worker ID 等运行配置
-        │       └── db/schema.sql             用户/RBAC、商品/SKU、购物车、库存、订单、支付表与幂等种子；
-        │           数量范围、库存锁定约束、状态、价格、唯一编码和外键约束
+        │       ├── application.yml            数据源、JWT、MVC 路径、订单 worker ID
+        │       └── db/schema.sql              用户/RBAC、商品、购物车、库存、订单与支付表
         └── test/
             ├── java/com/example/bootserver/
-            │   ├── cart/domain/CartQuantityTest.java  数量边界
-            │   ├── cart/web/CartIntegrationTests.java  真实 HTTP、并发累加与本人隔离
-            │   ├── stock/domain/StockTest.java  可用量与库存不变式
-            │   ├── stock/StockArchitectureTest.java  库存分层与依赖方向约束
-            │   ├── stock/web/StockIntegrationTests.java  真实 HTTP、权限、条件更新与并发首次设置
-            │   ├── order/domain/OrderTest.java  订单金额和明细不变式
-            │   ├── order/domain/OrderRequestFingerprintTest.java  规范化请求指纹与键边界
-            │   ├── order/application/OrderNumberGeneratorTest.java  订单号唯一性与 worker 边界
-            │   ├── order/OrderArchitectureTest.java  订单分层与依赖方向约束
-            │   ├── order/web/OrderIntegrationTests.java  下单与本人查询 HTTP、原子回滚、并发预扣、幂等重放与越权隔离
-            │   ├── order/web/OrderCancellationIntegrationTests.java  本人取消、非法状态、库存释放与事务回滚
-            │   ├── order/web/OrderFulfillmentIntegrationTests.java  后台权限、全量分页与 PAID→SHIPPED→DONE 状态链
-            │   ├── payment/domain/PaymentTest.java  支付单金额、状态与标识不变式
-            │   ├── payment/PaymentArchitectureTest.java  支付分层与跨上下文协作边界
-            │   ├── payment/web/PaymentIntegrationTests.java  真实 HTTP、并发支付、状态门、库存实扣与事务回滚
-            │   ├── M2RegressionIntegrationTests.java  OpenAPI 四组资源与原子性、幂等、非法迁移 DoD 门禁
-            │   ├── controller/              HTTP 契约与授权
-            │   │   ├── AuthControllerWebTests.java、UserControllerWebTests.java
-            │   │   ├── ProductQueryIntegrationTests.java
-            │   │   └── ProductManagementIntegrationTests.java  并发改价只允许一次成功
-            │   ├── mapper/ProductSkuMapperIntegrationTests.java  数据约束与种子幂等
-            │   ├── security/JwtAuthenticationIntegrationTests.java  真实 JWT 请求
-            │   ├── service/RegisterFlowIntegrationTests.java、LoginFlowIntegrationTests.java
-            │   ├── config/LocalAdminBootstrapIntegrationTests.java
-            │   ├── handler/GlobalExceptionHandlerWebTests.java
-            │   ├── ApiPrefixIntegrationTests.java  可变 MVC 前缀与 OpenAPI
-            │   └── BootServerApplicationTests.java  启动与初始化
+            │   ├── architecture/ModuleArchitectureTest.java
+            │   │   跨模块公开 API、四层依赖、CQRS 分离与循环依赖约束
+            │   ├── identity/internal/         身份 Web、认证、持久化与管理员引导回归
+            │   ├── catalog/internal/          商品领域、持久化和真实 HTTP 回归
+            │   ├── cart/internal/             购物车领域与真实 HTTP/并发回归
+            │   ├── inventory/internal/        库存领域、架构与真实 HTTP/并发回归
+            │   ├── order/internal/            订单领域、架构、幂等与查询回归
+            │   ├── payment/internal/          支付领域、架构与真实 HTTP 回归
+            │   ├── M2RegressionIntegrationTests.java  M2 全路径回归
+            │   ├── handler/                   统一异常响应测试
+            │   ├── ApiPrefixIntegrationTests.java
+            │   └── BootServerApplicationTests.java
             └── resources/application.properties  测试用固定假密钥
 ```
+
+跨模块依赖保持单向：`cart -> catalog.api`、`inventory -> catalog.api`、`order -> catalog.api + inventory.api`、`payment -> order.api + inventory.api`。各模块拥有自己的表，查询侧可以针对页面建立投影，但不得直接读取其他模块的数据表。

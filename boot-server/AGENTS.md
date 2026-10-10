@@ -26,17 +26,58 @@ mvnw.cmd -pl services/user-service spring-boot:run
 ```text
 boot-server/
   infrastructure/common-core/   纯 Java 公共能力
-  services/user-service/        当前业务服务
+  services/user-service/        当前模块化单体部署单元
 ```
 
 ### 当前模块职责
 
 - `common-core` 只放领域无关能力，例如 `Result`、`ErrorCode`、`BusinessException`。
 - `common-core` 禁止依赖 Spring MVC、数据库、业务服务。
-- Controller、DTO、`@RestControllerAdvice`、安全配置放服务模块。
+- HTTP 接口、DTO、`@RestControllerAdvice`、安全配置放服务模块。
 - 应用服务只编排用例、事务和领域对象；领域规则与状态迁移由聚合根、实体或值对象守护。
 - Mapper 只负责数据访问。
 - Controller 禁止拼装复杂业务失败分支。
+
+### 领域模块化单体
+
+`user-service` 按数据所有权和业务语言划分六个领域模块：
+
+| 模块 | 数据所有权与职责 |
+|-|-|
+| `identity` | 用户、角色、权限、注册登录、JWT 与后台用户管理 |
+| `catalog` | 商品、SKU、上下架、改价与对外报价 |
+| `cart` | 当前用户购物车条目与数量规则 |
+| `inventory` | SKU 库存总量、锁定量与条件预扣 |
+| `order` | 订单、订单明细、幂等与订单状态 |
+| `payment` | 支付单、模拟支付与库存结算编排 |
+
+每个模块使用同一骨架：
+
+```text
+<module>/
+  api/                         跨模块唯一可依赖的公开契约
+  internal/
+    interfaces/                HTTP、安全过滤器与协议转换
+    application/
+      command/                 写用例、事务与跨模块编排
+      query/                   读用例、查询端口与场景投影
+    domain/                    聚合、值对象、领域失败、写仓储端口
+    infrastructure/            MyBatis、配置绑定与端口实现
+```
+
+- 其他模块只能依赖目标模块的 `api` 包，禁止 import 目标模块的 `internal`。模块没有跨模块消费者时，`api` 可只保留 `package-info.java`，不得为了形式暴露内部类型。
+- `api` 只放跨模块确实需要的接口、命令和结果；不得暴露 Web DTO、ORM Entity、Mapper、框架类型或 `internal` 类型。实现 Bean 放在本模块 `internal`。
+- 模块内部依赖方向为 `interfaces -> application -> domain`，`infrastructure -> application/domain`。应用层不得依赖接口层、Mapper 或 ORM Entity；领域层不得依赖 Spring、MyBatis-Plus、HTTP、Bean Validation 或数据库实现。
+- 一个模块独占写入自己的表，也不得直接查询其他模块的表。跨模块读取和写入均经公开 API；当前单库、本地方法调用不改变该规则。
+- 根包只保留启动入口、全局异常转换与真正跨领域的框架配置。`common-core` 仍只放领域无关契约，不放任何领域 DTO、Entity 或服务接口。
+- 架构测试必须覆盖：跨模块只依赖 `api`、模块无环依赖、四层方向、领域层框架隔离。目录迁移或新增跨模块协作时同步更新测试。
+
+### 轻量 CQRS
+
+- 命令与查询在应用层分开组织；写侧加载领域模型并守住不变式，读侧按接口场景返回专用投影，不为查询强行恢复聚合。
+- 轻量 CQRS 继续共用当前数据库和本地事务；它不等于主从复制，也不自动引入事件溯源、独立读库、消息或最终一致。
+- 查询端口定义在 `application/query`，由 `infrastructure` 实现；命令仓储端口优先定义在 `domain`，由 `infrastructure` 实现。
+- 跨模块命令或查询只能经对方 `api`。例如订单通过 `catalog.api` 取得可下单报价，通过 `inventory.api` 条件预扣库存；购物车价格同样由 `catalog.api` 提供，禁止 Mapper 跨表读取商品数据。
 
 ### 开工门槛
 
@@ -47,7 +88,7 @@ boot-server/
 
 - 后端业务代码实现必须严格遵循 [DDD 领域驱动设计](../docs/04-阶段四-微服务架构与分布式系统/04-DDD领域驱动设计.md)：先明确限界上下文和聚合边界，再按接口层、应用层、领域层、基础设施层组织职责。
 - 领域层不得依赖 Spring、MyBatis-Plus、HTTP 或数据库实现；持久化由基础设施层实现领域定义的仓储契约。新增行为及修改触及的既有行为均按此规则落实，不借单卡改动重构无关代码。
-- 业务包按限界上下文组织，对外只暴露明确接口；一个上下文不得直接修改另一个上下文的持久化数据。当前单体中的跨上下文协作也须有显式契约，不以未来拆服务为由提前增加物理模块。
+- 业务包按上方六个领域模块组织，对外只暴露 `api`；一个上下文不得直接读写另一个上下文的持久化数据。当前单体中的跨上下文协作也须有显式契约，不以未来拆服务为由提前增加物理模块。
 - 接口 DTO 不进入领域层。接口层负责协议绑定和响应转换，应用层负责用例编排与事务，领域层负责状态和不变式，基础设施层负责数据库、缓存、消息及外部调用；依赖方向指向领域层。
 - 聚合根是聚合内状态变更的入口；值对象不可变并按值判等。领域实体与 MyBatis-Plus 持久化实体分别建模，仓储实现负责两者转换，不能用 ORM 注解或公开 setter 绕过领域规则。
 - 普通列表与搜索可以使用只读查询投影，不为读取强行加载写模型聚合。

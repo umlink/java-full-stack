@@ -29,6 +29,8 @@
         <jjwt.version>0.13.0</jjwt.version>
         <!-- SpringDoc 3.x 与 Spring Boot 4.x 兼容，提供 OpenAPI JSON 与 Swagger UI。 -->
         <springdoc.version>3.1.1</springdoc.version>
+        <!-- ArchUnit 仅用于测试期执行模块与分层约束；1.5.1 支持当前 Java 25 字节码。 -->
+        <archunit.version>1.5.1</archunit.version>
         <lombok.version>1.18.42</lombok.version>
         <maven-compiler-plugin.version>3.14.0</maven-compiler-plugin.version>
     </properties>
@@ -82,6 +84,11 @@
                 <groupId>org.springdoc</groupId>
                 <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
                 <version>${springdoc.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.tngtech.archunit</groupId>
+                <artifactId>archunit</artifactId>
+                <version>${archunit.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
