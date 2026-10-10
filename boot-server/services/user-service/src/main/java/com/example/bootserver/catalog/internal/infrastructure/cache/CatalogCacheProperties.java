@@ -15,7 +15,7 @@ public class CatalogCacheProperties {
     private boolean enabled;
 
     @NotNull
-    private Duration productDetailTtl = Duration.ofMinutes(10);
+    private Duration productDetailTtl;
 
     public boolean isEnabled() {
         return enabled;

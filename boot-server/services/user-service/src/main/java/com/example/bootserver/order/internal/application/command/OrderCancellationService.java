@@ -31,7 +31,8 @@ public class OrderCancellationService {
         }
         OrderCommandSnapshot order = snapshots.getCommandSnapshotByIdAndUserId(orderId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "订单不存在"));
-        order.items().forEach(item -> stocks.releaseReserved(item.skuId(), item.quantity()));
+        order.items().forEach(item -> stocks.releaseReserved(
+                order.reservationId(), item.skuId(), item.quantity()));
     }
 
     private void rejectMissingOrIllegalState(Long userId, Long orderId) {

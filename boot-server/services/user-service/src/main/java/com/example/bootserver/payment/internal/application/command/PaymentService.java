@@ -29,7 +29,8 @@ public class PaymentService {
         PayableOrder order = orders.claimForPayment(userId, orderId);
         Payment payment = Payment.success(order.id(), numbers.nextPayNo(), order.totalAmount());
         Long paymentId = payments.insert(payment);
-        order.items().forEach(item -> stocks.settleReserved(item.skuId(), item.quantity()));
+        order.items().forEach(item -> stocks.settleReserved(
+                order.reservationId(), item.skuId(), item.quantity()));
         return new PaymentResult(paymentId, payment.orderId(), payment.payNo(), payment.amount(), payment.status());
     }
 }

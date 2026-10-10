@@ -25,4 +25,7 @@ public interface CartItemMapper extends BaseMapper<CartItemEntity> {
     @Delete("DELETE FROM t_cart_item WHERE id = #{itemId} AND user_id = #{userId}")
     int deleteOwned(@Param("userId") Long userId, @Param("itemId") Long itemId);
 
+    @Delete("DELETE FROM t_cart_item WHERE user_id = #{userId}")
+    int deleteByUserId(@Param("userId") Long userId);
+
 }

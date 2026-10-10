@@ -35,7 +35,7 @@ public class OrderPaymentService implements OrderPaymentApi {
         }
         OrderCommandSnapshot order = snapshots.getCommandSnapshotByIdAndUserId(orderId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "订单不存在"));
-        return new PayableOrder(order.id(), order.totalAmount(), order.items().stream()
+        return new PayableOrder(order.id(), order.totalAmount(), order.reservationId(), order.items().stream()
                 .map(item -> new PayableOrder.Item(item.skuId(), item.quantity()))
                 .toList());
     }

@@ -233,6 +233,35 @@ CREATE TABLE IF NOT EXISTS t_order_item (
     CONSTRAINT ck_order_item_price CHECK (price >= 0)
 );
 
+-- 订单与超时任务在同一本地事务落库；MQ 发送结果只推进 Outbox 状态。
+CREATE TABLE IF NOT EXISTS t_order_timeout_outbox (
+    id                BIGINT AUTO_INCREMENT PRIMARY KEY,
+    event_id          CHAR(36) NOT NULL,
+    business_key      VARCHAR(96) NOT NULL,
+    order_id          BIGINT NOT NULL,
+    event_version     INT NOT NULL,
+    payload           VARCHAR(1024) NOT NULL,
+    status            VARCHAR(16) NOT NULL DEFAULT 'PENDING',
+    send_attempts     INT NOT NULL DEFAULT 0,
+    next_attempt_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    sent_at           TIMESTAMP NULL,
+    processed_at      TIMESTAMP NULL,
+    last_error        VARCHAR(512) NULL,
+    create_time       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uk_order_timeout_event UNIQUE (event_id),
+    CONSTRAINT uk_order_timeout_business UNIQUE (business_key),
+    CONSTRAINT uk_order_timeout_order UNIQUE (order_id),
+    CONSTRAINT fk_order_timeout_order FOREIGN KEY (order_id) REFERENCES t_order (id),
+    CONSTRAINT ck_order_timeout_version CHECK (event_version = 1),
+    CONSTRAINT ck_order_timeout_status CHECK (
+        status IN ('PENDING', 'SENDING', 'SENT', 'CONSUMING', 'PROCESSED', 'IGNORED', 'DEAD')
+    ),
+    CONSTRAINT ck_order_timeout_attempts CHECK (send_attempts >= 0)
+);
+CREATE INDEX IF NOT EXISTS idx_order_timeout_dispatch
+    ON t_order_timeout_outbox (status, next_attempt_time, id);
+
 -- 同一订单至多一张成功支付单；支付流水号只用于外部追踪。
 CREATE TABLE IF NOT EXISTS t_payment (
     id          BIGINT AUTO_INCREMENT PRIMARY KEY,

@@ -2,10 +2,23 @@ package com.example.bootserver.inventory.internal.infrastructure;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
+
+import java.util.List;
 
 /** 锁定量可能由后续下单改变，因此调整总量必须在数据库重新检查锁定量。 */
 public interface StockMapper extends BaseMapper<StockEntity> {
+
+    @Select("""
+            SELECT sku_id, total_count, locked_count, update_time
+            FROM t_stock
+            WHERE sku_id > #{afterSkuId}
+            ORDER BY sku_id ASC
+            LIMIT #{limit}
+            """)
+    List<StockEntity> selectBySkuIdAfter(@Param("afterSkuId") long afterSkuId,
+                                         @Param("limit") int limit);
 
     @Update("""
             UPDATE t_stock SET total_count = #{total}, update_time = CURRENT_TIMESTAMP

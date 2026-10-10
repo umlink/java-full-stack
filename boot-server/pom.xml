@@ -31,6 +31,8 @@
         <springdoc.version>3.1.1</springdoc.version>
         <!-- ArchUnit 仅用于测试期执行模块与分层约束；1.5.1 支持当前 Java 25 字节码。 -->
         <archunit.version>1.5.1</archunit.version>
+        <!-- RocketMQ server 与普通 Java remoting client 使用同一已验证版本。 -->
+        <rocketmq.version>5.5.1</rocketmq.version>
         <lombok.version>1.18.42</lombok.version>
         <maven-compiler-plugin.version>3.14.0</maven-compiler-plugin.version>
     </properties>
@@ -89,6 +91,11 @@
                 <groupId>com.tngtech.archunit</groupId>
                 <artifactId>archunit</artifactId>
                 <version>${archunit.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.rocketmq</groupId>
+                <artifactId>rocketmq-client</artifactId>
+                <version>${rocketmq.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

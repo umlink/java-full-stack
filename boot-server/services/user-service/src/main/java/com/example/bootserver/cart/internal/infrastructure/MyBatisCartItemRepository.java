@@ -4,12 +4,14 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.example.bootserver.cart.internal.domain.CartItem;
 import com.example.bootserver.cart.internal.domain.CartItemRepository;
 import com.example.bootserver.cart.internal.domain.CartQuantity;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
 /** 将购物车端口映射到 MyBatis；商品表只通过只读查询参与可售判断与现价投影。 */
 @Repository
+@ConditionalOnProperty(prefix = "app.cart.redis", name = "enabled", havingValue = "false", matchIfMissing = true)
 public class MyBatisCartItemRepository implements CartItemRepository {
 
     private final CartItemMapper mapper;

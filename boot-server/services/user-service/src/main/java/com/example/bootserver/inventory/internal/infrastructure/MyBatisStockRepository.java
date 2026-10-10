@@ -4,6 +4,7 @@ import com.example.bootserver.inventory.internal.domain.Stock;
 import com.example.bootserver.inventory.internal.domain.StockRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 
 /** 仓储适配器负责持久化对象与纯 Java 库存聚合之间的转换。 */
@@ -19,6 +20,11 @@ public class MyBatisStockRepository implements StockRepository {
     @Override
     public Optional<Stock> getBySkuId(Long skuId) {
         return Optional.ofNullable(mapper.selectById(skuId)).map(this::toStock);
+    }
+
+    @Override
+    public List<Stock> listBySkuIdAfter(long afterSkuId, int limit) {
+        return mapper.selectBySkuIdAfter(afterSkuId, limit).stream().map(this::toStock).toList();
     }
 
     @Override

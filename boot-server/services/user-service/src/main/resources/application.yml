@@ -51,9 +51,41 @@ app:
     enabled: ${BOOT_CATALOG_CACHE_ENABLED:false}
     # 商品详情是可重建的性能副本；主动失效失败时由 TTL 限制陈旧窗口。
     product-detail-ttl: ${BOOT_CATALOG_CACHE_PRODUCT_DETAIL_TTL:PT10M}
+  cart:
+    redis:
+      # 购物车是 Redis 中的权威瞬态数据；关闭时才装配旧数据库适配器。
+      enabled: ${BOOT_REDIS_CART_ENABLED:true}
+      ttl: ${BOOT_REDIS_CART_TTL:P30D}
+      migration-lock-ttl: ${BOOT_REDIS_CART_MIGRATION_LOCK_TTL:PT10S}
+      migration-wait-timeout: ${BOOT_REDIS_CART_MIGRATION_WAIT_TIMEOUT:PT2S}
+  inventory:
+    redis:
+      # Redis 负责快速预占，数据库条件更新仍是最终库存事实。
+      enabled: ${BOOT_REDIS_INVENTORY_ENABLED:true}
+      ttl: ${BOOT_REDIS_INVENTORY_TTL:P7D}
+    reconciliation:
+      # 数据库可售量是权威值；差异副本通过删除后惰性重建收敛。
+      enabled: ${BOOT_INVENTORY_RECONCILIATION_ENABLED:true}
+      interval: ${BOOT_INVENTORY_RECONCILIATION_INTERVAL:PT1M}
+      batch-size: ${BOOT_INVENTORY_RECONCILIATION_BATCH_SIZE:100}
   order:
     # 单实例学习环境使用 0；多实例部署必须为每个实例配置不同的 worker ID。
     worker-id: ${BOOT_ORDER_WORKER_ID:0}
+  order-timeout:
+    rocketmq:
+      enabled: ${BOOT_ROCKETMQ_ENABLED:true}
+      namesrv-addr: ${BOOT_ROCKETMQ_NAMESRV_ADDR:127.0.0.1:9876}
+      topic: ${BOOT_ROCKETMQ_ORDER_TIMEOUT_TOPIC:bootmall-order-timeout}
+      producer-group: ${BOOT_ROCKETMQ_ORDER_TIMEOUT_PRODUCER_GROUP:bootmall-order-timeout-producer}
+      consumer-group: ${BOOT_ROCKETMQ_ORDER_TIMEOUT_CONSUMER_GROUP:bootmall-order-timeout-consumer}
+      delay-level: ${BOOT_ROCKETMQ_ORDER_TIMEOUT_DELAY_LEVEL:16}
+      send-timeout: ${BOOT_ROCKETMQ_SEND_TIMEOUT:PT3S}
+      poll-interval: ${BOOT_ROCKETMQ_OUTBOX_POLL_INTERVAL:PT1S}
+      batch-size: ${BOOT_ROCKETMQ_OUTBOX_BATCH_SIZE:50}
+      max-send-attempts: ${BOOT_ROCKETMQ_OUTBOX_MAX_SEND_ATTEMPTS:5}
+      retry-backoff: ${BOOT_ROCKETMQ_OUTBOX_RETRY_BACKOFF:PT5S}
+      sending-lease: ${BOOT_ROCKETMQ_OUTBOX_SENDING_LEASE:PT30S}
+      max-reconsume-times: ${BOOT_ROCKETMQ_MAX_RECONSUME_TIMES:3}
   jwt:
     secret-base64: ${JWT_SECRET_BASE64:}
     # Spring Boot 用 Duration 绑定该值；改配置即可调整新签发令牌的有效期。
@@ -82,8 +114,8 @@ mybatis-plus:
 management:
   health:
     redis:
-      # 缓存关闭时 Redis 不参与应用健康判定；开启后才检查真实依赖。
-      enabled: ${app.catalog-cache.enabled:false}
+      # Redis 购物车默认启用，因此健康检查默认验证该真实依赖。
+      enabled: ${BOOT_REDIS_HEALTH_ENABLED:true}
   endpoints:
     web:
       exposure:

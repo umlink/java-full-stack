@@ -11,6 +11,9 @@ ADR（Architecture Decision Record）用于记录一次会影响后续代码结�
 | 编号 | 决策 | 状态 | 文件 |
 |-|-|-|-|
 | 001 | 商品详情采用可降级的 Redis 旁路缓存 | 已采纳 | [001-商品详情Redis旁路缓存](001-商品详情Redis旁路缓存.md) |
+| 002 | Redis Hash 作为购物车权威存储 | 已采纳 | [002-RedisHash作为购物车权威存储](002-RedisHash作为购物车权威存储.md) |
+| 003 | Redis Lua 预占与数据库库存双层防线 | 已采纳 | [003-RedisLua预占与数据库库存双层防线](003-RedisLua预占与数据库库存双层防线.md) |
+| 004 | 本地 Outbox 与 RocketMQ 延时关单 | 已采纳 | [004-本地Outbox与RocketMQ延时关单](004-本地Outbox与RocketMQ延时关单.md) |
 
 ## 模板
 

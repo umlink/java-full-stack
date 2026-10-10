@@ -11,6 +11,8 @@ import com.example.bootserver.order.internal.application.query.OrderQueryReposit
 import com.example.bootserver.order.internal.application.query.OrderSummary;
 import com.example.bootserver.order.internal.application.command.OrderCommandSnapshot;
 import com.example.bootserver.order.internal.application.command.OrderCommandSnapshotRepository;
+import com.example.bootserver.order.internal.application.command.OrderReservationIds;
+import com.example.bootserver.inventory.api.InventoryReservationId;
 import com.example.bootserver.order.internal.domain.OrderStatus;
 import org.springframework.stereotype.Repository;
 
@@ -65,16 +67,27 @@ public class MyBatisOrderQueryRepository implements OrderQueryRepository, OrderC
         OrderEntity order = orderMapper.selectOne(new LambdaQueryWrapper<OrderEntity>()
                 .eq(OrderEntity::getId, id)
                 .eq(OrderEntity::getUserId, userId));
+        return toCommandSnapshot(order);
+    }
+
+    @Override
+    public Optional<OrderCommandSnapshot> getCommandSnapshotById(Long id) {
+        return toCommandSnapshot(orderMapper.selectById(id));
+    }
+
+    private Optional<OrderCommandSnapshot> toCommandSnapshot(OrderEntity order) {
         if (order == null) {
             return Optional.empty();
         }
         List<OrderCommandSnapshot.Item> items = itemMapper.selectList(new LambdaQueryWrapper<OrderItemEntity>()
-                        .eq(OrderItemEntity::getOrderId, id)
+                        .eq(OrderItemEntity::getOrderId, order.getId())
                         .orderByAsc(OrderItemEntity::getId))
                 .stream()
                 .map(item -> new OrderCommandSnapshot.Item(item.getSkuId(), item.getQuantity()))
                 .toList();
-        return Optional.of(new OrderCommandSnapshot(order.getId(), order.getTotalAmount(), items));
+        InventoryReservationId reservationId = OrderReservationIds.fromSnapshot(
+                order.getUserId(), order.getId(), order.getIdempotencyKey());
+        return Optional.of(new OrderCommandSnapshot(order.getId(), order.getTotalAmount(), reservationId, items));
     }
 
     @Override

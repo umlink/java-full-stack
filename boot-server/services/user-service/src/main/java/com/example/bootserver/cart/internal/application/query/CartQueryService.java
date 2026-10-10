@@ -5,7 +5,6 @@ import com.example.bootserver.cart.internal.domain.CartItemRepository;
 import com.example.bootserver.catalog.api.CartSkuSnapshot;
 import com.example.bootserver.catalog.api.CatalogQueryApi;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
@@ -24,7 +23,6 @@ public class CartQueryService {
         this.catalog = catalog;
     }
 
-    @Transactional(readOnly = true)
     public List<CartItemView> listMyItems(Long userId) {
         List<CartItem> items = repository.listByUserId(userId);
         Set<Long> skuIds = items.stream().map(CartItem::skuId).collect(Collectors.toSet());

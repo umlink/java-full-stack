@@ -2,7 +2,7 @@ package com.example.bootserver.cart.internal.domain;
 
 import java.util.List;
 
-/** 购物车持久化端口；原子累加与唯一键是并发不变式的数据库兜底。 */
+/** 购物车存储端口；具体适配器负责用原子操作守住并发数量不变式。 */
 public interface CartItemRepository {
 
     int increase(Long userId, Long skuId, CartQuantity delta);

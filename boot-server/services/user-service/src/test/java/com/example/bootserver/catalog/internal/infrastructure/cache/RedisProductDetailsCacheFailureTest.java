@@ -12,6 +12,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.Duration;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -32,7 +33,7 @@ class RedisProductDetailsCacheFailureTest {
                 .thenThrow(new RedisConnectionFailureException("test connection failure"));
 
         ObjectMapper objectMapper = mock(ObjectMapper.class);
-        CatalogCacheProperties properties = new CatalogCacheProperties();
+        CatalogCacheProperties properties = properties();
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         RedisProductDetailsCache cache = new RedisProductDetailsCache(
                 redisTemplate, objectMapper, properties, meterRegistry);
@@ -51,7 +52,7 @@ class RedisProductDetailsCacheFailureTest {
         StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
         ObjectMapper objectMapper = mock(ObjectMapper.class);
         RedisProductDetailsCache cache = new RedisProductDetailsCache(
-                redisTemplate, objectMapper, new CatalogCacheProperties(), new SimpleMeterRegistry());
+                redisTemplate, objectMapper, properties(), new SimpleMeterRegistry());
         String key = RedisProductDetailsCache.PRODUCT_DETAILS_KEY_PREFIX + "8";
         when(redisTemplate.delete(key)).thenReturn(true);
 
@@ -70,5 +71,11 @@ class RedisProductDetailsCacheFailureTest {
             TransactionSynchronizationManager.clearSynchronization();
             TransactionSynchronizationManager.setActualTransactionActive(false);
         }
+    }
+
+    private CatalogCacheProperties properties() {
+        CatalogCacheProperties properties = new CatalogCacheProperties();
+        properties.setProductDetailTtl(Duration.ofMinutes(10));
+        return properties;
     }
 }

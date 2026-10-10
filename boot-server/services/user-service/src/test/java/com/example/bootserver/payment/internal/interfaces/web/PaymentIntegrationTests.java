@@ -60,6 +60,30 @@ class PaymentIntegrationTests {
     }
 
     @Test
+    void legacyOrderWithoutIdempotencyKeyCanStillBePaid() throws Exception {
+        long sku = newSku("1.00");
+        stock(sku, 1);
+        String token = login();
+        Long userId = db.queryForObject("SELECT MAX(id) FROM t_user", Long.class);
+        String orderNo = "LEGACY" + UUID.randomUUID().toString().replace("-", "").substring(0, 24);
+        db.update("""
+                INSERT INTO t_order (order_no, user_id, status, total_amount)
+                VALUES (?, ?, 'CREATED', 1.00)
+                """, orderNo, userId);
+        Long orderId = db.queryForObject("SELECT id FROM t_order WHERE order_no = ?", Long.class, orderNo);
+        db.update("INSERT INTO t_order_item (order_id, sku_id, quantity, price) VALUES (?, ?, 1, 1.00)",
+                orderId, sku);
+        db.update("UPDATE t_stock SET locked_count = 1 WHERE sku_id = ?", sku);
+
+        data(send(payRequest(token, orderId)));
+
+        assertThat(orderStatus(orderId)).isEqualTo("PAID");
+        assertThat(paymentCount(orderId)).isEqualTo(1);
+        assertThat(stockTotal(sku)).isZero();
+        assertThat(stockLocked(sku)).isZero();
+    }
+
+    @Test
     void concurrentPaymentHasOneWinnerAndOneSettlement() throws Exception {
         long sku = newSku("1.00");
         stock(sku, 1);

@@ -43,16 +43,16 @@ boot-server/
         │   │   │       │   ├── command/      加购、改数量、删除与原子写步骤
         │   │   │       │   └── query/        购物车投影；经 catalog.api 补齐商品现价
         │   │   │       ├── domain/           CartItem、CartQuantity 与仓储端口
-        │   │   │       └── infrastructure/   仅访问 t_cart_item 的 MyBatis 适配器
+        │   │   │       └── infrastructure/   Redis Hash 权威存储、旧表惰性迁移与 MyBatis 回退适配器
         │   │   ├── inventory/                库存
         │   │   │   ├── api/InventoryCommandApi.java  预扣、结算和释放库存的公开命令契约
         │   │   │   └── internal/
         │   │   │       ├── interfaces/web/   库存设置与查询 HTTP
         │   │   │       ├── application/
-        │   │   │       │   ├── command/      设置总量、预扣、结算、释放与条件写入
+        │   │   │       │   ├── command/      设置总量、预扣、结算、释放、条件写入与分批对账
         │   │   │       │   └── query/        库存查询投影与查询端口
         │   │   │       ├── domain/           Stock 不变式与仓储端口
-        │   │   │       └── infrastructure/   库存命令/查询 MyBatis 适配器
+        │   │   │       └── infrastructure/   Redis Lua 预占/对账副本、定时调度与库存 MyBatis 适配器
         │   │   ├── order/                    订单
         │   │   │   ├── api/                  OrderPaymentApi 与支付认领快照
         │   │   │   └── internal/
@@ -81,7 +81,7 @@ boot-server/
             │   ├── identity/internal/         身份 Web、认证、持久化与管理员引导回归
             │   ├── catalog/internal/          商品领域、持久化、缓存降级和真实 Redis/HTTP 回归
             │   ├── cart/internal/             购物车领域与真实 HTTP/并发回归
-            │   ├── inventory/internal/        库存领域、架构与真实 HTTP/并发回归
+            │   ├── inventory/internal/        库存领域、架构、真实 Redis 预占/对账与 HTTP/并发回归
             │   ├── order/internal/            订单领域、架构、幂等与查询回归
             │   ├── payment/internal/          支付领域、架构与真实 HTTP 回归
             │   ├── M2RegressionIntegrationTests.java  M2 全路径回归
